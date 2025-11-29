@@ -59,12 +59,19 @@ add_extension_to_path("omni.usd.libs-*")
 add_extension_to_path("omni.kit.usd.layers-*")
 add_extension_to_path("omni.kit.usd.collect-*")
 
-# 3. omni.hydra (Fix for scene_api error)
-add_extension_to_path("omni.hydra.scene_api-*")
-add_extension_to_path("omni.hydra.usd-*") # Good measure
-add_extension_to_path("omni.hydra.rtx-*") # Good measure
+# 3. omni.hydra (Add ALL hydra packages)
+add_extension_to_path("omni.hydra*")
 
-# 4. Main Isaac Sim bin
+# 4. omni.gpu_foundation (Critical for rendering/simulation)
+add_extension_to_path("omni.gpu_foundation*")
+
+# 5. usdrt (USD Runtime, often needed by hydra delegates)
+add_extension_to_path("usdrt.scenegraph*")
+
+# 6. omni.physics (Physics engine)
+add_extension_to_path("omni.physx*")
+
+# 7. Main Isaac Sim bin
 isaacsim_bin = os.path.join(isaacsim_path, "bin")
 if os.path.exists(isaacsim_bin):
      try:
