@@ -8,27 +8,6 @@ parser.add_argument("--headless", action="store_true", default=False, help="Run 
 args = parser.parse_args()
 
 # --- ISAAC SIM SETUP ---
-import glob
-
-# WORKAROUND: Add Isaac Sim extensions to sys.path manually
-# Even with a proper install, standalone scripts sometimes miss these paths
-import isaacsim
-isaacsim_path = os.path.dirname(isaacsim.__file__)
-extscache_path = os.path.join(isaacsim_path, "extscache")
-
-# Helper to add extension to sys.path
-def add_ext_to_path(pattern):
-    dirs = glob.glob(os.path.join(extscache_path, pattern))
-    if dirs:
-        sys.path.append(dirs[0])
-
-# Add critical extensions to sys.path
-add_ext_to_path("omni.kit.usd.layers-*")
-add_ext_to_path("omni.usd-1.*")
-add_ext_to_path("omni.kit.usd.collect-*")
-add_ext_to_path("omni.usd.libs-*")
-add_ext_to_path("omni.hydra*")
-
 from isaacsim import SimulationApp
 
 # Configure the simulation app
