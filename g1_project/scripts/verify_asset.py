@@ -21,34 +21,57 @@ extscache_path = os.path.join(isaacsim_path, "extscache")
 if not os.path.exists(extscache_path):
     extscache_path = r"C:\Users\basti\miniconda3\envs\isaaclab\Lib\site-packages\isaacsim\extscache"
 
-print(f"Using extscache path: {extscache_path}")
+# TARGETED FIX: Add specific dependencies that are known to cause DLL issues
+# We avoid adding EVERYTHING to prevent WinError 206 (Filename too long) or PATH overflow
 
-# 1. Add omni.kit.usd.layers
-layer_dirs = glob.glob(os.path.join(extscache_path, "omni.kit.usd.layers-*"))
-if layer_dirs:
-    sys.path.append(layer_dirs[0])
+def add_extension_to_path(pattern):
+    dirs = glob.glob(os.path.join(extscache_path, pattern))
+    for d in dirs:
+        # Add bin
+        bin_path = os.path.join(d, "bin")
+        if os.path.exists(bin_path):
+            try:
+                os.add_dll_directory(bin_path)
+                os.environ['PATH'] = bin_path + os.pathsep + os.environ['PATH']
+            except Exception as e:
+                print(f"Warning: Failed to add {bin_path}: {e}")
+        
+        # Add libs
+        libs_path = os.path.join(d, "libs")
+        if os.path.exists(libs_path):
+            try:
+                os.add_dll_directory(libs_path)
+                os.environ['PATH'] = libs_path + os.pathsep + os.environ['PATH']
+            except Exception as e:
+                print(f"Warning: Failed to add {libs_path}: {e}")
+        
+        # Add the dir itself to sys.path for python imports
+        if d not in sys.path:
+            sys.path.append(d)
 
-# 2. Add omni.usd
-usd_dirs = glob.glob(os.path.join(extscache_path, "omni.usd-1.*"))
-if usd_dirs:
-    sys.path.append(usd_dirs[0])
+print("Applying TARGETED DLL fix...")
 
-# 3. Add omni.kit.usd.collect
-collect_dirs = glob.glob(os.path.join(extscache_path, "omni.kit.usd.collect-*"))
-if collect_dirs:
-    sys.path.append(collect_dirs[0])
+# 1. omni.usd and libs
+add_extension_to_path("omni.usd-1.*")
+add_extension_to_path("omni.usd.libs-*")
 
-# 4. Add omni.usd.libs (and bin to DLL path)
-usd_libs_dirs = glob.glob(os.path.join(extscache_path, "omni.usd.libs-*"))
-if usd_libs_dirs:
-    usd_libs_path = usd_libs_dirs[0]
-    sys.path.append(usd_libs_path)
-    
-    # Add bin to DLL directory (CRITICAL for Windows)
-    bin_path = os.path.join(usd_libs_path, "bin")
-    if os.path.exists(bin_path):
-        os.add_dll_directory(bin_path)
-        os.environ['PATH'] = bin_path + os.pathsep + os.environ['PATH']
+# 2. omni.kit.usd
+add_extension_to_path("omni.kit.usd.layers-*")
+add_extension_to_path("omni.kit.usd.collect-*")
+
+# 3. omni.hydra (Fix for scene_api error)
+add_extension_to_path("omni.hydra.scene_api-*")
+add_extension_to_path("omni.hydra.usd-*") # Good measure
+add_extension_to_path("omni.hydra.rtx-*") # Good measure
+
+# 4. Main Isaac Sim bin
+isaacsim_bin = os.path.join(isaacsim_path, "bin")
+if os.path.exists(isaacsim_bin):
+     try:
+        os.add_dll_directory(isaacsim_bin)
+        os.environ['PATH'] = isaacsim_bin + os.pathsep + os.environ['PATH']
+     except Exception:
+        pass
 
 from isaacsim import SimulationApp
 
@@ -61,6 +84,7 @@ config = {
     "window_height": 720,
     "renderer": "RayTracedLighting",
     "display_options": 3286,  # Show Grid
+    "extra_ext_paths": [extscache_path],
 }
 
 # Start the app
