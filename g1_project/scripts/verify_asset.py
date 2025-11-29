@@ -53,8 +53,19 @@ def main():
         open_stage(usd_path)
         print("Stage opened successfully.")
 
-        # Create a ground plane if it doesn't exist (optional, for better view)
-        # prim_utils.create_prim("/World/GroundPlane", "Plane", translation=(0, 0, 0), scale=(10, 10, 1))
+        # Add a Ground Plane
+        from isaacsim.core.api.objects import GroundPlane
+        import numpy as np
+        GroundPlane(prim_path="/World/ground_plane", size=10.0, color=np.array([0.5, 0.5, 0.5]))
+
+        # Add a Distant Light (Sun)
+        import omni.kit.commands
+        from pxr import UsdLux, Sdf
+        import omni.usd
+        
+        stage = omni.usd.get_context().get_stage()
+        light_prim = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/default_light"))
+        light_prim.CreateIntensityAttr(1000.0)
 
         # Set camera view to look at the robot
         set_camera_view(eye=[2.0, 2.0, 2.0], target=[0.0, 0.0, 0.8], camera_prim_path="/OmniverseKit_Persp")
