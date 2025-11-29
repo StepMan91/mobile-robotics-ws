@@ -8,11 +8,21 @@ parser.add_argument("--headless", action="store_true", default=False, help="Run 
 args = parser.parse_args()
 
 # --- ISAAC SIM SETUP ---
-from isaaclab.app import AppLauncher
+from isaacsim import SimulationApp
 
 # Configure the simulation app
-app_launcher = AppLauncher(args_cli=args)
-simulation_app = app_launcher.app
+config = {
+    "headless": args.headless,
+    "width": 1280,
+    "height": 720,
+    "window_width": 1280,
+    "window_height": 720,
+    "renderer": "RayTracedLighting",
+    "display_options": 3286,  # Show Grid
+}
+
+# Start the app
+simulation_app = SimulationApp(config)
 print("SimulationApp started successfully.")
 
 # --- IMPORTS AFTER STARTUP ---
