@@ -11,74 +11,23 @@ args = parser.parse_args()
 import glob
 
 # WORKAROUND: Add Isaac Sim extensions to sys.path manually
-# This is required because the pip install doesn't always set up the paths correctly for all extensions
-# We try to find the extscache directory relative to the isaacsim package
+# Even with a proper install, standalone scripts sometimes miss these paths
 import isaacsim
 isaacsim_path = os.path.dirname(isaacsim.__file__)
 extscache_path = os.path.join(isaacsim_path, "extscache")
 
-# If not found there, try the hardcoded path from the error log (miniconda env)
-if not os.path.exists(extscache_path):
-    extscache_path = r"C:\Users\basti\miniconda3\envs\isaaclab\Lib\site-packages\isaacsim\extscache"
-
-# TARGETED FIX: Add specific dependencies that are known to cause DLL issues
-# We avoid adding EVERYTHING to prevent WinError 206 (Filename too long) or PATH overflow
-
-def add_extension_to_path(pattern):
+# Helper to add extension to sys.path
+def add_ext_to_path(pattern):
     dirs = glob.glob(os.path.join(extscache_path, pattern))
-    for d in dirs:
-        # Add bin
-        bin_path = os.path.join(d, "bin")
-        if os.path.exists(bin_path):
-            try:
-                os.add_dll_directory(bin_path)
-                os.environ['PATH'] = bin_path + os.pathsep + os.environ['PATH']
-            except Exception as e:
-                print(f"Warning: Failed to add {bin_path}: {e}")
-        
-        # Add libs
-        libs_path = os.path.join(d, "libs")
-        if os.path.exists(libs_path):
-            try:
-                os.add_dll_directory(libs_path)
-                os.environ['PATH'] = libs_path + os.pathsep + os.environ['PATH']
-            except Exception as e:
-                print(f"Warning: Failed to add {libs_path}: {e}")
-        
-        # Add the dir itself to sys.path for python imports
-        if d not in sys.path:
-            sys.path.append(d)
+    if dirs:
+        sys.path.append(dirs[0])
 
-print("Applying TARGETED DLL fix...")
-
-# 1. omni.usd and libs
-add_extension_to_path("omni.usd-1.*")
-add_extension_to_path("omni.usd.libs-*")
-
-# 2. omni.kit.usd
-add_extension_to_path("omni.kit.usd.layers-*")
-add_extension_to_path("omni.kit.usd.collect-*")
-
-# 3. omni.hydra (Add ALL hydra packages)
-add_extension_to_path("omni.hydra*")
-
-# 4. omni.gpu_foundation (Critical for rendering/simulation)
-add_extension_to_path("omni.gpu_foundation*")
-
-# 5. usdrt (USD Runtime, often needed by hydra delegates)
-add_extension_to_path("usdrt.scenegraph*")
-
-# 6. omni.physics (Physics engine)
-add_extension_to_path("omni.physx*")
-
-# 7. Main Isaac Sim bin
-isaacsim_bin = os.path.join(isaacsim_path, "bin")
-if os.path.exists(isaacsim_bin):
-     try:
-        os.add_dll_directory(isaacsim_bin)
-        os.environ['PATH'] = isaacsim_bin + os.pathsep + os.environ['PATH']
-     except Exception:
-        pass
+# Add critical extensions to sys.path
+add_ext_to_path("omni.kit.usd.layers-*")
+add_ext_to_path("omni.usd-1.*")
+add_ext_to_path("omni.kit.usd.collect-*")
+add_ext_to_path("omni.usd.libs-*")
+add_ext_to_path("omni.hydra*")
 
 from isaacsim import SimulationApp
 
@@ -91,7 +40,6 @@ config = {
     "window_height": 720,
     "renderer": "RayTracedLighting",
     "display_options": 3286,  # Show Grid
-    "extra_ext_paths": [extscache_path],
 }
 
 # Start the app
