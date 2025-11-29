@@ -1,10 +1,10 @@
 from setuptools import setup
 
-package_name = 'unitree_rl'
+package_name = 'g1_rl_agent'
 
 setup(
     name=package_name,
-    version='0.0.0',
+    version='0.0.1',
     packages=[package_name],
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -13,14 +13,14 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='wsluser',
-    maintainer_email='wsluser@todo.todo',
-    description='RL Agent for Unitree G1',
+    maintainer='User',
+    maintainer_email='user@example.com',
+    description='RL Agent for Unitree G1 Robot',
     license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'rl_agent = unitree_rl.rl_agent:main',
+            'rl_agent = g1_rl_agent.rl_agent:main',
         ],
     },
 )
