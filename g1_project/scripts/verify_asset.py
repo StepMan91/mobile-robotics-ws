@@ -14,7 +14,8 @@ print("SimulationApp started successfully.")
 from omni.isaac.core.utils.stage import open_stage, is_stage_loading
 
 # Define path to USD
-root_dir = r"c:\Users\basti\.gemini\antigravity\playground\cobalt-cosmos"
+# Define path to USD
+root_dir = r"c:\Users\basti\source\repos\mobile-robotics-ws"
 usd_path = os.path.join(root_dir, "assets/g1_29dof_rev_1_0/g1_29dof_rev_1_0.usd")
 
 print(f"Attempting to open stage: {usd_path}")

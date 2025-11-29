@@ -100,20 +100,6 @@ Before starting, ensure you have the following installed:
 
 2.  **Set up Isaac Lab**:
     Follow the official [Isaac Lab Installation Guide](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html). Ensure you can run the basic Isaac Lab examples.
-
-3.  **Install Project Dependencies**:
-    ```bash
-    # Install Python dependencies
-    pip install -r requirements.txt
-    
-    # Install custom G1 environment
-    pip install -e g1_project/config
-    ```
-
-4.  **Build ROS2 Workspace**:
-    ```bash
-    cd ros2_ws
-    colcon build --symlink-install
     source install/setup.bash
     ```
 
