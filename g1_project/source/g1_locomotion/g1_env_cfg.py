@@ -268,13 +268,7 @@ class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
                 size=(20.0, 20.0),
                 sub_terrains={
                     "flat": MeshPlaneTerrainCfg(
-                        proportion=0.2,
-                    ),
-                    "rough": MeshRandomGridTerrainCfg(
-                        proportion=0.2,
-                        grid_width=0.5,
-                        grid_height_range=(0.05, 0.1),
-                        platform_width=2.0,
+                        proportion=0.4,
                     ),
                     "stairs_pyramid": MeshPyramidStairsTerrainCfg(
                         proportion=0.3,
