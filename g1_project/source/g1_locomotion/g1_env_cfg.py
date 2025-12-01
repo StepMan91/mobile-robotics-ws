@@ -152,14 +152,21 @@ class EventCfg:
     )
 
 from isaaclab.envs.mdp import time_out, root_height_below_minimum
+from isaaclab.managers import TerminationTermCfg as TermTerm
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
+
+@configclass
+class CurriculumCfg:
+    """Curriculum terms for the environment."""
+    pass
 
 @configclass
 class TerminationsCfg:
     """Termination terms for the environment."""
     # Time out
-    time_out = mdp.Term(func=time_out, params={})
+    time_out = TermTerm(func=time_out, params={})
     # Base stability
-    base_stability = mdp.Term(func=root_height_below_minimum, params={"minimum_height": 0.2})
+    base_stability = TermTerm(func=root_height_below_minimum, params={"minimum_height": 0.2})
 
 @configclass
 class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
@@ -170,6 +177,7 @@ class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
     
     # Basic settings
     episode_length_s = 20.0
+    decimation = 4
     
     # Observations
     observations: ObservationsCfg = ObservationsCfg()
@@ -181,6 +189,8 @@ class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
     rewards: RewardsCfg = RewardsCfg()
     # Terminations
     terminations: TerminationsCfg = TerminationsCfg()
+    # Curriculum
+    curriculum: CurriculumCfg = CurriculumCfg()
     # Commands
     commands: CommandsCfg = CommandsCfg()
     
