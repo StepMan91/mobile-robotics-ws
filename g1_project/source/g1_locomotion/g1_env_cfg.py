@@ -213,8 +213,11 @@ class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
         super().__post_init__()
         
         # Viewer settings
+        # Viewer settings
         self.viewer.eye = [3.0, 3.0, 3.0]
         self.viewer.lookat = [0.0, 0.0, 0.0]
+        self.viewer.origin_type = "asset_root"
+        self.viewer.asset_name = "robot"
         
         # Simulation settings
         self.sim.dt = 0.005  # 200Hz
@@ -242,6 +245,7 @@ class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
                     sleep_threshold=0.005,
                     stabilization_threshold=0.001,
                 ),
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.5, 0.0)),
             ),
             init_state=ArticulationCfg.InitialStateCfg(
                 pos=(0.0, 0.0, 0.8), # Start slightly above ground
@@ -299,15 +303,11 @@ class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
                 },
             ),
             max_init_terrain_level=5,
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.5, 0.5, 0.5)),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.1, 0.5, 0.1)),
             debug_vis=False,
         )
 
-        # Define light
-        self.scene.light = AssetBaseCfg(
-            prim_path="/World/light",
-            spawn=sim_utils.DistantLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75)),
-        )
+
 
         # Sensors
         self.scene.height_scanner = RayCasterCfg(
