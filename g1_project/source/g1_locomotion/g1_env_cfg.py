@@ -67,7 +67,7 @@ class CommandsCfg:
         rel_heading_envs=1.0,
         heading_command=True,
         heading_control_stiffness=0.5,
-        debug_vis=True,
+        debug_vis=False,
         ranges=mdp.UniformVelocityCommandCfg.Ranges(
             lin_vel_x=(-1.0, 1.0), lin_vel_y=(-1.0, 1.0), ang_vel_z=(-1.0, 1.0), heading=(-math.pi, math.pi)
         ),
@@ -93,7 +93,7 @@ class RewardsCfg:
     undesired_contacts = RewTerm(
         func=mdp.undesired_contacts,
         weight=-1.0,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_thigh_link|.*_calf_link")},
+        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_hip_pitch_link|.*_knee_link"), "threshold": 1.0},
     )
     # -- Optional --
     flat_orientation_l2 = RewTerm(func=mdp.rewards.flat_orientation_l2, weight=-0.0)
@@ -121,8 +121,14 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "lin_vel_range": (-1.0, 1.0),
-            "ang_vel_range": (-1.0, 1.0),
+            "velocity_range": {
+                "x": (-0.5, 0.5),
+                "y": (-0.5, 0.5),
+                "z": (-0.5, 0.5),
+                "roll": (-0.5, 0.5),
+                "pitch": (-0.5, 0.5),
+                "yaw": (-0.5, 0.5),
+            },
         },
     )
 
@@ -176,6 +182,12 @@ class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
     
     # Scene settings
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5)
+    
+    # Light
+    light = AssetBaseCfg(
+        prim_path="/World/light",
+        spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75)),
+    )
     
     # Basic settings
     episode_length_s = 20.0
@@ -250,7 +262,7 @@ class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
                     damping=2.0,
                 ),
                 "torso": ImplicitActuatorCfg(
-                    joint_names_expr=[".*_waist_.*"],
+                    joint_names_expr=["waist_.*"],
                     stiffness=200.0,
                     damping=5.0,
                 ),
