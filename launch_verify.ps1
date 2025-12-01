@@ -25,4 +25,4 @@ Write-Host "--------------------------------------------------"
 
 # 5. Run the script using the Conda Python
 # We use the python executable directly to avoid any 'isaaclab.bat' interference
-python C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\verify_asset.py
+python C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\verify_asset.py $args
