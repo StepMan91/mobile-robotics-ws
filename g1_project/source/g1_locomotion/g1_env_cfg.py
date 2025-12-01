@@ -272,7 +272,7 @@ class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
                     ),
                     "rough": MeshRandomGridTerrainCfg(
                         proportion=0.2,
-                        grid_width=0.4,
+                        grid_width=0.5,
                         grid_height_range=(0.05, 0.1),
                         platform_width=2.0,
                     ),
