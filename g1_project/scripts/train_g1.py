@@ -9,10 +9,8 @@ source_dir = os.path.abspath(os.path.join(script_dir, "../source"))
 sys.path.append(source_dir)
 
 # Add Isaac Lab source paths
-# The package is in source/isaaclab/isaaclab, so we need to add source/isaaclab to sys.path
 isaac_lab_path = r"C:\Users\basti\source\repos\IsaacLab\source"
 sys.path.append(os.path.join(isaac_lab_path, "isaaclab"))
-# sys.path.append(os.path.join(isaac_lab_path, "extensions")) # Not needed if using isaaclab package?
 
 # DEBUG: Print sys.path
 print("DEBUG: sys.path:")
@@ -30,7 +28,6 @@ try:
     print("SUCCESS: Imported AppLauncher from isaaclab.app")
 except ImportError as e:
     print(f"FAILED: Import AppLauncher from isaaclab.app: {e}")
-    # Fallback or exit
     sys.exit(1)
 
 # Parse arguments
@@ -53,26 +50,37 @@ import gymnasium as gym
 import torch
 from isaaclab.envs import ManagerBasedRLEnv
 import isaaclab.envs.mdp as mdp
-from isaaclab.utils.parsing import parse_env_cfg
-
-print("DEBUG: mdp attributes:", dir(mdp))
-if hasattr(mdp, "rewards"):
-    print("DEBUG: mdp.rewards attributes:", dir(mdp.rewards))
 
 # Import the task to register it
 import g1_locomotion
+from g1_locomotion.g1_env_cfg import G1LocomotionEnvCfg
+
 
 def main():
-    # Parse the environment configuration
-    env_cfg = parse_env_cfg(
-        args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs, use_fabric=not args_cli.disable_fabric
-    )
-    print(f"DEBUG: env_cfg type: {type(env_cfg)}")
-    # print(f"DEBUG: env_cfg content: {env_cfg}") # Might be too large
+    # Instantiate configuration directly
+    print("DEBUG: Instantiating G1LocomotionEnvCfg directly...")
+    env_cfg = G1LocomotionEnvCfg()
+    
+    # Apply overrides
+    if args_cli.num_envs:
+        env_cfg.scene.num_envs = args_cli.num_envs
+    
+    # Handle device placement (ManagerBasedRLEnv handles this based on sim config usually)
+    # But we might need to set it if we want to force CPU/GPU
+    if args_cli.cpu:
+        env_cfg.sim.device = "cpu"
+        env_cfg.sim.use_gpu_pipeline = False
+    else:
+        env_cfg.sim.device = "cuda:0"
+        env_cfg.sim.use_gpu_pipeline = True
+        
+    if args_cli.disable_fabric:
+        env_cfg.sim.use_fabric = False
 
+    print(f"DEBUG: env_cfg type: {type(env_cfg)}")
+    
     # Create the environment
-    # Note: We pass cfg=env_cfg. If env_cfg is a dict, it might cause issues if ManagerBasedRLEnv expects an object.
-    # But parse_env_cfg should return an object.
+    # We pass the config object directly
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
     
     print(f"[INFO] Environment created: {env.unwrapped.cfg.scene.num_envs} environments")

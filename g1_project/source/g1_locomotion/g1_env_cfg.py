@@ -2,7 +2,14 @@ import math
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
-from isaaclab.terrains import TerrainImporterCfg, TerrainGeneratorCfg
+from isaaclab.terrains import (
+    TerrainImporterCfg, 
+    TerrainGeneratorCfg, 
+    MeshPlaneTerrainCfg, 
+    MeshRandomGridTerrainCfg, 
+    MeshPyramidStairsTerrainCfg, 
+    MeshInvertedPyramidStairsTerrainCfg
+)
 from isaaclab.utils import configclass
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.managers import EventTermCfg as EventTerm
@@ -144,12 +151,25 @@ class EventCfg:
         },
     )
 
+from isaaclab.envs.mdp import time_out, root_height_below_minimum
+
+@configclass
+class TerminationsCfg:
+    """Termination terms for the environment."""
+    # Time out
+    time_out = mdp.Term(func=time_out, params={})
+    # Base stability
+    base_stability = mdp.Term(func=root_height_below_minimum, params={"minimum_height": 0.2})
+
 @configclass
 class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the G1 locomotion environment."""
     
     # Scene settings
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5)
+    
+    # Basic settings
+    episode_length_s = 20.0
     
     # Observations
     observations: ObservationsCfg = ObservationsCfg()
@@ -159,6 +179,8 @@ class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
     events: EventCfg = EventCfg()
     # Rewards
     rewards: RewardsCfg = RewardsCfg()
+    # Terminations
+    terminations: TerminationsCfg = TerminationsCfg()
     # Commands
     commands: CommandsCfg = CommandsCfg()
     
@@ -224,45 +246,41 @@ class G1LocomotionEnvCfg(ManagerBasedRLEnvCfg):
         )
 
         # Define the terrain
-        self.scene.terrain = TerrainGeneratorCfg(
+        self.scene.terrain = TerrainImporterCfg(
             prim_path="/World/ground",
             terrain_type="generator",
-            noise_parameter=None,
-            seed=42,
-            curriculum=True,
-            difficulty_range=(0.0, 1.0),
-            num_rows=10,
-            num_cols=20,
-            sub_terrains={
-                "flat": sim_utils.MeshPlaneTerrainCfg(
-                    proportion=0.2,
-                ),
-                "rough": sim_utils.MeshRandomGridTerrainCfg(
-                    proportion=0.2,
-                    grid_width=0.4,
-                    grid_height_range=(0.05, 0.1),
-                    platform_width=2.0,
-                ),
-                "stairs_straight": sim_utils.MeshStairsTerrainCfg(
-                    proportion=0.2,
-                    step_height_range=(0.05, 0.2),
-                    step_width=1.0,
-                    num_steps=12,
-                    platform_width=2.0,
-                ),
-                "stairs_pyramid": sim_utils.MeshPyramidStairsTerrainCfg(
-                    proportion=0.2,
-                    step_height_range=(0.05, 0.2),
-                    step_width=1.0,
-                    platform_width=2.0,
-                ),
-                "stairs_stepped": sim_utils.MeshInvertedPyramidStairsTerrainCfg(
-                    proportion=0.2,
-                    step_height_range=(0.05, 0.2),
-                    step_width=1.0,
-                    platform_width=2.0,
-                ),
-            },
+            terrain_generator=TerrainGeneratorCfg(
+                seed=42,
+                curriculum=True,
+                difficulty_range=(0.0, 1.0),
+                num_rows=10,
+                num_cols=20,
+                size=(20.0, 20.0),
+                sub_terrains={
+                    "flat": MeshPlaneTerrainCfg(
+                        proportion=0.2,
+                    ),
+                    "rough": MeshRandomGridTerrainCfg(
+                        proportion=0.2,
+                        grid_width=0.4,
+                        grid_height_range=(0.05, 0.1),
+                        platform_width=2.0,
+                    ),
+                    "stairs_pyramid": MeshPyramidStairsTerrainCfg(
+                        proportion=0.3,
+                        step_height_range=(0.05, 0.2),
+                        step_width=1.0,
+                        platform_width=2.0,
+                    ),
+                    "stairs_stepped": MeshInvertedPyramidStairsTerrainCfg(
+                        proportion=0.3,
+                        step_height_range=(0.05, 0.2),
+                        step_width=1.0,
+                        platform_width=2.0,
+                    ),
+                },
+            ),
+            max_init_terrain_level=5,
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.5, 0.5, 0.5)),
             debug_vis=False,
         )
