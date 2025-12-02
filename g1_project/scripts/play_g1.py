@@ -45,11 +45,11 @@ def main():
     # Simulation loop
     print("[INFO] Starting simulation loop...")
     while simulation_app.is_running():
-        # Zero actions for now (standing still / falling)
-        actions = torch.zeros((env.unwrapped.num_envs, env.unwrapped.action_space.shape[1]), device=env.unwrapped.device)
+        # Small random actions to see movement attempts
+        actions = (torch.rand((env.unwrapped.num_envs, env.unwrapped.action_space.shape[1]), device=env.unwrapped.device) * 2 - 1) * 0.3
         
-        # Random actions to see movement
-        # actions = torch.rand((env.unwrapped.num_envs, env.unwrapped.action_space.shape[1]), device=env.unwrapped.device) * 2 - 1
+        # Zero actions (just falling)
+        # actions = torch.zeros((env.unwrapped.num_envs, env.unwrapped.action_space.shape[1]), device=env.unwrapped.device)
         
         # Step the environment
         obs, rew, terminated, truncated, info = env.step(actions)
