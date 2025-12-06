@@ -31,12 +31,12 @@ def generate_launch_description():
         ),
         
         # 2b. Publish a static transform for the robot root (pelvis)
-        # Map -> Pelvis (Ground it at origin)
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            arguments=['0', '0', '0.78', '0', '0', '0', 'map', 'pelvis']
-        ),
+        # REMOVED: Now handled by human_bridge_node for dynamic tracking
+        # Node(
+        #     package='tf2_ros',
+        #     executable='static_transform_publisher',
+        #     arguments=['0', '0', '0.78', '0', '0', '0', 'map', 'pelvis']
+        # ),
         
         # 3. Robot State Publisher (G1)
         Node(
@@ -59,7 +59,6 @@ def generate_launch_description():
             package='rviz2',
             executable='rviz2',
             name='rviz2',
-            output='log',
-            env={'LC_NUMERIC': 'en_US.UTF-8'}
+            output='log'
         )
     ])
