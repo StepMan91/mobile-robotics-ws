@@ -13,6 +13,8 @@ from sensor_msgs.msg import JointState
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped, Quaternion
 
+from std_msgs.msg import String
+
 class HumanBridgeNode(Node):
     def __init__(self):
         super().__init__('human_bridge_node')
@@ -22,6 +24,13 @@ class HumanBridgeNode(Node):
         self.get_logger().info('Initialized HumanBridgeNode with JointState publisher')
         self.declare_parameter('udp_port', 8888)
         self.port = self.get_parameter('udp_port').value
+        
+        # Subscription to recorded JSON data
+        self.subscription = self.create_subscription(
+            String,
+            'human_json',
+            self.json_callback,
+            10)
         
         self.get_logger().info(f'Starting UDP Bridge on port {self.port}...')
         
@@ -51,6 +60,9 @@ class HumanBridgeNode(Node):
                 self.get_logger().error(f'UDP Error: OSError')
             except Exception as e:
                 self.get_logger().error(f'UDP Error: {e}')
+
+    def json_callback(self, msg):
+        self.process_data(msg.data)
 
     def process_data(self, json_str):
         try:
@@ -123,7 +135,11 @@ class HumanBridgeNode(Node):
 
         # --- 1. Root Pose (Pelvis) ---
         # Try to find a root. MidHip or average of Hips.
-        root_pos = get_pos('Pelvis') or get_pos('Waist')
+        # Try to find a root. MidHip or average of Hips.
+        root_pos = get_pos('Pelvis')
+        if root_pos is None:
+            root_pos = get_pos('Waist')
+        
         if root_pos is None:
             l_hip = get_pos('LeftHip')
             r_hip = get_pos('RightHip')
@@ -135,7 +151,7 @@ class HumanBridgeNode(Node):
             t = TransformStamped()
             t.header.stamp = self.get_clock().now().to_msg()
             t.header.frame_id = 'map'
-            t.child_frame_id = 'pelvis'
+            t.child_frame_id = 'base_link'
             t.transform.translation.x = root_pos[0]
             t.transform.translation.y = root_pos[1]
             t.transform.translation.z = root_pos[2]

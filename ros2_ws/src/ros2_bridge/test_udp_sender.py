@@ -3,7 +3,7 @@ import json
 import time
 import math
 
-UDP_IP = "127.0.0.1"
+UDP_IP = "172.31.69.131"
 UDP_PORT = 8888
 
 print(f"UDP Target IP: {UDP_IP}")
@@ -22,16 +22,20 @@ try:
                 {
                     "id": 1,
                     "joints": {
+                        "RightShoulder": {"x": 0.3, "y": 0.0, "z": 0.0},
+                        "RightElbow": {"x": 0.3, "y": 0.25, "z": 0.0},
                         "RightWrist": {
                             "x": 0.3,
-                            "y": 0.5 + math.sin(t) * 0.2, # Moving up/down
-                            "z": 1.0 + math.cos(t) * 0.2, # Moving fwd/back
+                            "y": 0.5 + math.sin(t) * 0.2, 
+                            "z": 0.0 + math.cos(t) * 0.2,
                             "confidence": 1.0
                         },
+                        "LeftShoulder": {"x": -0.3, "y": 0.0, "z": 0.0},
+                        "LeftElbow": {"x": -0.3, "y": 0.25, "z": 0.0},
                         "LeftWrist": {
                             "x": -0.3,
                             "y": 0.5,
-                            "z": 1.0,
+                            "z": 0.0,
                             "confidence": 0.8
                         }
                     }
