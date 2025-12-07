@@ -10,8 +10,9 @@ class G1Retargeter:
         package_dir = os.path.abspath(os.path.join(os.path.dirname(urdf_path), "../../.."))
         self.model = pin.buildModelFromUrdf(urdf_path, pin.JointModelFreeFlyer())
         self.data = self.model.createData()
-        self.geom_model = pin.buildGeomModelFromUrdf(self.model, urdf_path, pin.GeometryType.VISUAL, package_dirs=[package_dir])
-        self.geom_data = pin.GeometryObjectVector()
+        # Geometry not strictly needed for IK unless collision avoidance used
+        # self.geom_model = pin.buildGeomModelFromUrdf(self.model, urdf_path, pin.GeometryType.VISUAL, package_dirs=[package_dir])
+        # self.geom_data = pin.GeometryObjectVector()
         
         self.q0 = pin.neutral(self.model)
         
