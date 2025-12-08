@@ -5,7 +5,7 @@ $ISAAC_SIM_PATH = "C:\isaac-sim"
 $ENV:ISAAC_SIM_PATH = $ISAAC_SIM_PATH
 $ENV:ISAAC_PATH = $ISAAC_SIM_PATH
 $ENV:CARB_APP_PATH = "$ISAAC_SIM_PATH\kit"
-$ENV:EXP_PATH = "$ISAAC_SIM_PATH\apps\isaacsim.exp.base.kit"
+$ENV:EXP_PATH = "$ISAAC_SIM_PATH\apps"
 $ENV:OMNI_KIT_ACCEPT_EULA = "YES"
 
 # Source ROS2
@@ -19,7 +19,8 @@ else {
 }
 
 # Add Isaac Sim paths to PYTHONPATH
-$ENV:PYTHONPATH = "$ISAAC_SIM_PATH\site;$ISAAC_SIM_PATH\python_packages;$ISAAC_SIM_PATH\exts\omni.isaac.python;$ISAAC_SIM_PATH\kit\kernel\py;$ISAAC_SIM_PATH\exts\isaacsim.simulation_app;$ENV:PYTHONPATH"
+# Also add IsaacLab source to use AppLauncher
+$ENV:PYTHONPATH = "$ISAAC_SIM_PATH\site;$ISAAC_SIM_PATH\python_packages;$ISAAC_SIM_PATH\exts\omni.isaac.python;$ISAAC_SIM_PATH\kit\kernel\py;$ISAAC_SIM_PATH\exts\isaacsim.simulation_app;C:\Users\basti\source\repos\IsaacLab\source;C:\Users\basti\source\repos\IsaacLab\source\extensions;$ENV:PYTHONPATH"
 
 # Add DLL Paths
 $ENV:PATH = "$ISAAC_SIM_PATH;$ISAAC_SIM_PATH\bin;$ISAAC_SIM_PATH\kit;$ISAAC_SIM_PATH\exts\omni.usd.libs\bin;$ISAAC_SIM_PATH\exts\omni.usd.libs\libs;$ENV:PATH"
