@@ -8,6 +8,8 @@ import carb
 from omni.isaac.core import World
 from omni.isaac.core.robots import Robot
 from omni.isaac.core.utils.extensions import enable_extension
+# Enable extension BEFORE importing from it
+enable_extension("omni.importer.urdf")
 from omni.importer.urdf import _urdf
 import rclpy
 from rclpy.node import Node

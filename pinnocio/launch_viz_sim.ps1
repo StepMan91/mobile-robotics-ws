@@ -5,7 +5,18 @@ $ISAAC_SIM_PATH = "C:\isaac-sim"
 $ENV:ISAAC_SIM_PATH = $ISAAC_SIM_PATH
 $ENV:ISAAC_PATH = $ISAAC_SIM_PATH
 $ENV:CARB_APP_PATH = "$ISAAC_SIM_PATH\kit"
+$ENV:EXP_PATH = "$ISAAC_SIM_PATH\apps\isaacsim.exp.base.kit"
 $ENV:OMNI_KIT_ACCEPT_EULA = "YES"
+
+# Source ROS2
+$ROS2_SETUP = "C:\dev\ros2_humble\local_setup.ps1"
+if (Test-Path $ROS2_SETUP) {
+    Write-Host "Sourcing ROS2 from $ROS2_SETUP"
+    . $ROS2_SETUP
+}
+else {
+    Write-Host "Warning: ROS2 setup not found. Viz might fail if rclpy is needed."
+}
 
 # Add Isaac Sim paths to PYTHONPATH
 $ENV:PYTHONPATH = "$ISAAC_SIM_PATH\site;$ISAAC_SIM_PATH\python_packages;$ISAAC_SIM_PATH\exts\omni.isaac.python;$ISAAC_SIM_PATH\kit\kernel\py;$ISAAC_SIM_PATH\exts\isaacsim.simulation_app;$ENV:PYTHONPATH"
