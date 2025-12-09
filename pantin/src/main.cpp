@@ -51,6 +51,9 @@ int main(int argc, char *argv[]) {
   int cameraFPS = 60;
   float confidenceThreshold = 0.3f;
 
+  std::string udpIP = "127.0.0.1";
+  int udpPort = 8888;
+
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
 
@@ -67,6 +70,10 @@ int main(int argc, char *argv[]) {
       cameraFPS = std::stoi(argv[++i]);
     } else if (arg == "--confidence" && i + 1 < argc) {
       confidenceThreshold = std::stof(argv[++i]);
+    } else if (arg == "--ip" && i + 1 < argc) {
+      udpIP = argv[++i];
+    } else if (arg == "--port" && i + 1 < argc) {
+      udpPort = std::stoi(argv[++i]);
     } else {
       std::cerr << "Unknown argument: " << arg << "\n";
       printUsage(argv[0]);
@@ -119,9 +126,9 @@ int main(int argc, char *argv[]) {
 
     // 5. Initialize UDP Sender (Network Bridge)
     appLog(LogLevel::INFO, "\n[5/5] Initializing Network Bridge (UDP)...");
-    UdpSender udpSender("172.31.69.131", 8888);
+    UdpSender udpSender(udpIP, udpPort);
     if (udpSender.initialize()) {
-      appLog(LogLevel::INFO, "✅ UDP Sender ready on 172.31.69.131:8888");
+      appLog(LogLevel::INFO, "✅ UDP Sender ready on " + udpIP + ":" + std::to_string(udpPort));
     } else {
       appLog(LogLevel::WARNING,
              "⚠️ UDP Sender failed to initialize. Network features disabled.");
