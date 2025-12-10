@@ -14,11 +14,14 @@ isaac_lab_path = r"C:\Users\basti\source\repos\IsaacLab\source"
 if isaac_lab_path not in sys.path:
     sys.path.append(isaac_lab_path)
 # Also append extensions/rsl_rl if needed?
-# Usually IsaacLab extensions are in source/extensions ?
-# Let's add that too just in case.
 ext_path = os.path.join(isaac_lab_path, "extensions")
 if ext_path not in sys.path:
     sys.path.append(ext_path)
+
+# Add Local rsl_rl repo (Fix for import error)
+rsl_rl_path = os.path.join(source_dir, "rsl_rl_repo")
+if rsl_rl_path not in sys.path:
+    sys.path.append(rsl_rl_path)
 
 # Launch Isaac Sim
 from isaacsim import SimulationApp
