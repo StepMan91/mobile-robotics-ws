@@ -169,16 +169,11 @@ def solve_leg_ik_analytic(hip_pos, foot_pos, max_knee_deg=120.0):
     
     # CLAMP KNEE
     max_knee_rad = math.radians(max_knee_deg)
-    if knee_angle > max_knee_rad:
-        # If knee is constrained, we can't reach closer distances?
-        # Actually we should clamp it, but that means the foot pos must move.
-        # For this demo, simply clamping the angale might break the chain closure (foot slips).
-        # Better to clamp the angle and accept the foot might not reach target? 
-        # Or just let the solver solve and clamp result? 
-        # User requested rigorous limits. We will clamp result.
-        pass # Let's handle clamping later in the return to keep IK "valid" if physically possible, 
-             # but we can't physically reach if we don't bend.
-             # We will just clamp the output value.
+    knee_angle = max(0.0, min(knee_angle, max_knee_rad))
+    # Note: Clamping knee angle effectively means we assume the leg is clearer/straighter.
+    # If the physical target was closer, the leg simply won't reach it visually (foot will look detached from target conceptually)
+    # But since we set Joint Positions, the robot will render with the clamped leg.
+    # This avoids the "Deep Crouch" / 90 degree look.
     
     pitch_vec = math.atan2(dx, -dz)
     val_beta = (L1**2 + dist**2 - L2**2) / (2 * L1 * dist)
@@ -187,6 +182,11 @@ def solve_leg_ik_analytic(hip_pos, foot_pos, max_knee_deg=120.0):
     
     hip_pitch = pitch_vec + beta
     ankle_pitch = -(hip_pitch - knee_angle)
+    
+    # Final Safety for NaNs
+    if math.isnan(hip_pitch): hip_pitch = 0.0
+    if math.isnan(knee_angle): knee_angle = 0.0
+    if math.isnan(ankle_pitch): ankle_pitch = 0.0
     
     return hip_pitch, knee_angle, ankle_pitch
 
@@ -321,12 +321,31 @@ class SensingWalker:
             elif self.state == 2:
                 self.r_foot = self.cycloid_interp(self.swing_start, self.swing_end, phase)
         
-        # 4. Root
-        avg_x = (self.l_foot[0] + self.r_foot[0]) / 2.0
-        avg_z = (self.l_foot[2] + self.r_foot[2]) / 2.0
-        self.root_pos[0] = avg_x
+        # 4. Root Update (Anti-Crouch)
+        # To prevent "90 degree" bends or "going underground", we must ensure the hips
+        # are high enough for the Stance leg to be nearly straight.
+        
+        # Which leg is stance?
+        # If State 1 (Left Swing), Right is Stance.
+        # If State 2 (Right Swing), Left is Stance.
+        # If State 0 (DS), Both.
+        
+        stance_z = 0.0
+        if self.state == 1: # Left Swing, Right Stance
+            stance_z = self.r_foot[2]
+        elif self.state == 2: # Right Swing, Left Stance
+            stance_z = self.l_foot[2]
+        else:
+            stance_z = max(self.l_foot[2], self.r_foot[2])
+            
+        # Drive Root Z from Stance Height
+        self.root_pos[0] = (self.l_foot[0] + self.r_foot[0]) / 2.0
         self.root_pos[1] = 0.0 
-        self.root_pos[2] = avg_z + self.hip_height 
+        self.root_pos[2] = stance_z + self.hip_height 
+        
+        # Print Debug every 60 frames
+        if int(self.t_total * 60) % 60 == 0:
+            print(f"[DEBUG] Zone: {zone} | Profile: {self.current_profile_name} | RootZ: {self.root_pos[2]:.2f}")
         
         # 5. IK with Limits
         limit = self.profile["max_knee_deg"]
