@@ -11,7 +11,7 @@ kit = SimulationApp(CONFIG)
 
 import omni
 import carb
-from pxr import Gf, UsdGeom
+from pxr import Gf, UsdGeom, UsdLux, Sdf
 
 # --- 0. ROBUST ENVIRONMENT PATCH ---
 if "ISAAC_PATH" not in os.environ:
@@ -88,74 +88,245 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, st
              post_pos = base_pos + np.array([px, y_off, pz + rail_height/2.0])
              world.scene.add(VisualCylinder(prim_path=f"/World/Environment/Stairs/Post_{idx}_{p_idx}", name=f"post_{idx}_{p_idx}", position=post_pos, scale=np.array([0.02, 0.02, rail_height]), color=np.array([0.2, 0.2, 0.2])))
 
+def create_lighting_array(stage, start_pos, count=5, spacing=5.0, height=3.0):
+    """Adds a row of industrial lights"""
+    for i in range(count):
+        x = start_pos[0] + i * spacing
+        pos = Gf.Vec3f(x, start_pos[1], start_pos[2] + height)
+        
+        # OpenUSD Light
+        light_path = f"/World/Lights/Light_{i}"
+        light = UsdLux.SphereLight.Define(stage, light_path)
+        light.CreateIntensityAttr(30000.0)
+        light.CreateRadiusAttr(0.2)
+        light.CreateColorAttr(Gf.Vec3f(1.0, 0.9, 0.8)) # Warm Industrial
+        light.AddTranslateOp().Set(pos)
+        
+        # Visual Fixture (Sphere)
+        # We can use UsdGeom.Sphere or just a VisualSphere wrapper if we had 'world'
+        # Since we have stage, let's just make the light visible (SphereLight has geometry in some renderers, but let's be sure)
+        pass
 
-class ProceduralClimber:
+# --- KINEMATICS ---
+
+def solve_leg_ik(hip_to_ankle_vec):
+    """
+    Simple Analytical IK for a 2-segment leg (Thigh + Shin).
+    Returns (HipPitch, KneePitch, AnklePitch)
+    """
+    # G1 Approx Lengths
+    L1 = 0.35 # Thigh
+    L2 = 0.35 # Shin
+    
+    dist = np.linalg.norm(hip_to_ankle_vec)
+    # Clamp distance
+    dist = max(0.1, min(dist, (L1 + L2) * 0.99))
+    
+    # Law of Cosines
+    # c^2 = a^2 + b^2 - 2ab cos(C)
+    # Knee Angle (interior)
+    # dist^2 = L1^2 + L2^2 - 2*L1*L2*cos(180 - knee_bend)
+    # cos(180-knee) = (L1^2 + L2^2 - dist^2) / (2*L1*L2)
+    
+    try:
+        cos_angle = (L1**2 + L2**2 - dist**2) / (2 * L1 * L2)
+        cos_angle = max(-1.0, min(1.0, cos_angle))
+        interior_knee = math.acos(cos_angle)
+        knee_bend = math.pi - interior_knee # How much knee bends from straight
+    except:
+        knee_bend = 0.0
+
+    # Hip Pitch contribution
+    # Angle of vector from Hip to Ankle relative to vertical/forward?
+    # In local hip frame:
+    # Forward = X, Down = -Z.
+    # Pitch = angle in X-Z plane.
+    dx = hip_to_ankle_vec[0]
+    dz = hip_to_ankle_vec[2]
+    
+    # Base angle to target
+    # atan2(x, -z) -> 0 when straight down (-z), + when forward (x)
+    base_pitch = math.atan2(dx, -dz)
+    
+    # Additional angle due to thigh geometry triangle
+    # sin(alpha) / L2 = sin(interior_knee) / dist
+    # or Law of Cosines again for hip angle
+    # L2^2 = L1^2 + dist^2 - 2*L1*dist*cos(alpha)
+    cos_alpha = (L1**2 + dist**2 - L2**2) / (2 * L1 * dist)
+    cos_alpha = max(-1.0, min(1.0, cos_alpha))
+    alpha = math.acos(cos_alpha)
+    
+    # Total Hip Pitch = Base Pitch - Alpha (since knee bends backward usually? No, knee bends forward on humanoids)
+    # G1/Human: Knee bends forward (Positive Knee Pitch?).
+    # If Knee bends forward, the ankle is 'behind' the line of thigh extension?
+    # Let's assume positive knee = bent.
+    # Then hip needs to flex (positive pitch) to bring foot forward.
+    # Geometry:
+    # Hip Angle = base_pitch + alpha?
+    # Let's try:
+    hip_pitch = base_pitch + alpha
+    
+    # Ankle Pitch: Keep foot flat (horizontal)
+    # Global Foot Angle = HipPitch - KneePitch + AnklePitch = 0
+    # AnklePitch = -HipPitch + KneePitch
+    ankle_pitch = -hip_pitch + knee_bend
+    
+    return hip_pitch, knee_bend, ankle_pitch
+
+
+class KinematicWalker:
     def __init__(self, start_pos, stair_start, stair_params):
-        self.pos = np.array(start_pos)
+        self.root_pos = np.array(start_pos)
         self.stair_start = np.array(stair_start)
         self.stair_params = stair_params # (depth, height, num)
-        self.state = "WALK"
-        self.t = 0.0
-        self.walk_speed = 0.3
-        self.climb_speed = 0.2
-        self.gait_freq = 3.0
         
-    def update(self, dt):
-        self.t += dt
+        # State
+        self.t_cycle = 0.0
+        self.cycle_time = 1.0 # Seconds per step
+        self.step_length = 0.3
+        self.left_swing = True # Left leg swinging first
         
-        # 1. Root Motion
-        if self.state == "WALK":
-            # Move X towards stair start
-            self.pos[0] += self.walk_speed * dt
-            if self.pos[0] >= self.stair_start[0]:
-                self.state = "CLIMB"
-        elif self.state == "CLIMB":
-            # Diagonal Motion
-            dist = self.pos[0] - self.stair_start[0]
-            max_dist = self.stair_params[0] * (self.stair_params[2] + 2) # Steps + Catwalk
+        # Feet Positions (World)
+        # Init feet under hips
+        self.l_foot = self.root_pos + np.array([0, 0.1, -0.75])
+        self.r_foot = self.root_pos + np.array([0, -0.1, -0.75])
+        
+        # Targets
+        self.l_foot_target = self.l_foot.copy()
+        self.r_foot_target = self.r_foot.copy()
+        self.l_foot_start = self.l_foot.copy()
+        self.r_foot_start = self.r_foot.copy()
+        
+        self.stair_mode = False
+        
+    def get_terrain_height(self, x):
+        # Determine ground height at X
+        
+        # Flat ground
+        if x < self.stair_start[0]:
+            return 0.0
             
-            if dist < max_dist:
-                sx = self.climb_speed * dt
-                # Slope
-                sz = sx * (self.stair_params[1] / self.stair_params[0])
-                self.pos[0] += sx
-                if self.pos[2] < (self.stair_params[1] * self.stair_params[2]): # Stop Z at top
-                     self.pos[2] += sz
-            else:
-                self.state = "WAIT"
+        # Stairs
+        # Relative X
+        rx = x - self.stair_start[0]
+        # Which step?
+        step_idx = int(rx / self.stair_params[0])
         
-        # 2. Joint Angles (Sine Wave Gait)
+        if step_idx < 0: return 0.0
+        if step_idx >= self.stair_params[2]:
+            # Catwalk height
+            return self.stair_params[2] * self.stair_params[1]
+            
+        # On Step
+        return (step_idx + 1) * self.stair_params[1]
+
+
+    def update(self, dt):
+        self.t_cycle += dt
+        
+        # Normalized phase 0..1
+        phase = self.t_cycle / self.cycle_time
+        
+        if phase >= 1.0:
+            # Switch Leg
+            self.left_swing = not self.left_swing
+            self.t_cycle = 0.0
+            phase = 0.0
+            
+            # Lock placed foot, Plan new target for Swing leg
+            
+            # Move Root Forward logic (Continuous)
+            # Actually, we update targets at start of cycle?
+            
+            # Predict Next Step Position
+            # Current Standing Foot is the one that WASN'T swinging (now became stance)
+            stance_foot = self.l_foot if not self.left_swing else self.r_foot
+            
+            # New Target for Swing Foot is StanceX + StepLength
+            next_x = stance_foot[0] + self.step_length
+            next_z = self.get_terrain_height(next_x)
+            
+            if self.left_swing:
+                self.l_foot_start = self.l_foot.copy()
+                self.l_foot_target = np.array([next_x, 0.1, next_z])
+            else:
+                self.r_foot_start = self.r_foot.copy()
+                self.r_foot_target = np.array([next_x, -0.1, next_z])
+
+        # --- UPDATE FEET (Interpolation) ---
+        # Swing Leg follows Bezier/Sin curve
+        # Stance Leg stays put (Relative to World)
+        
+        # Swing Height (Lift)
+        lift_height = 0.15 
+        # Extra lift for stairs?
+        if self.l_foot_target[2] > self.l_foot_start[2] + 0.01: # Climbing
+            lift_height = 0.25 # Higher lift to clear nose
+            
+        # Sinusoidal Lift
+        z_offset = math.sin(phase * math.pi) * lift_height
+        
+        # Linear Interp X/Y/Z base
+        lerp = phase
+        
+        swing_pos_base = (1-lerp) * (self.l_foot_start if self.left_swing else self.r_foot_start) + \
+                         lerp * (self.l_foot_target if self.left_swing else self.r_foot_target)
+                         
+        swing_pos = swing_pos_base.copy()
+        # Add Z lift
+        # Note: We need to lift ABOVE the max of start/end Z to avoid clipping
+        base_z = swing_pos[2]
+        swing_pos[2] = max(self.l_foot_start[2], self.l_foot_target[2]) + z_offset if self.left_swing else \
+                       max(self.r_foot_start[2], self.r_foot_target[2]) + z_offset
+        
+        if self.left_swing:
+            self.l_foot = swing_pos
+        else:
+            self.r_foot = swing_pos
+            
+        # --- UPDATE ROOT ---
+        # Root should be between feet, smoothed
+        # Average X of feet
+        avg_x = (self.l_foot[0] + self.r_foot[0]) / 2.0
+        avg_z = (self.l_foot[2] + self.r_foot[2]) / 2.0
+        
+        self.root_pos[0] = avg_x
+        # Height: Hip Height above mean foot Z
+        self.root_pos[2] = avg_z + 0.75 # Hip Height
+        
+        # --- SOLVE IK ---
         joints = {}
         
-        phase = self.t * self.gait_freq
+        # Left Leg
+        l_vec = self.l_foot - self.root_pos - np.array([0, 0.07, 0]) # Hip Offset
+        hp, kp, ap = solve_leg_ik(l_vec)
+        joints['left_hip_pitch_joint'] = hp
+        joints['left_knee_joint'] = kp
+        joints['left_ankle_pitch_joint'] = ap
         
-        # Legs
-        l_hip_pitch = math.sin(phase) * 0.5
-        r_hip_pitch = math.sin(phase + math.pi) * 0.5
+        # Right Leg
+        r_vec = self.r_foot - self.root_pos - np.array([0, -0.07, 0])
+        hp, kp, ap = solve_leg_ik(r_vec)
+        joints['right_hip_pitch_joint'] = hp
+        joints['right_knee_joint'] = kp
+        joints['right_ankle_pitch_joint'] = ap
         
-        l_knee = max(0, math.sin(phase + math.pi/2)) * 1.0
-        r_knee = max(0, math.sin(phase + math.pi/2 + math.pi)) * 1.0
+        # Arms (Simple Sway)
+        arm_sway = math.sin(self.t_cycle * math.pi * 2) * 0.5
+        joints['left_shoulder_pitch_joint'] = arm_sway
+        joints['right_shoulder_pitch_joint'] = -arm_sway
+        joints['left_elbow_joint'] = 0.5
+        joints['right_elbow_joint'] = 0.5
         
-        joints['left_hip_pitch_joint'] = l_hip_pitch
-        joints['right_hip_pitch_joint'] = r_hip_pitch
-        joints['left_knee_joint'] = l_knee
-        joints['right_knee_joint'] = r_knee
-        joints['left_ankle_pitch_joint'] = -0.3 # Keep foot somewhat flat
-        joints['right_ankle_pitch_joint'] = -0.3
-
-        # Arms (Swing opposite to legs)
-        l_shoulder_pitch = -l_hip_pitch * 0.5
-        r_shoulder_pitch = -r_hip_pitch * 0.5
-        
-        joints['left_shoulder_pitch_joint'] = l_shoulder_pitch
-        joints['right_shoulder_pitch_joint'] = r_shoulder_pitch
-        joints['left_elbow_joint'] = 1.0 # Bent
-        joints['right_elbow_joint'] = 1.0
-        
-        return self.pos, joints
+        return self.root_pos, joints
 
 def main():
     world = World()
+    
+    # Lighting
+    stage = kit.context.get_stage()
+    create_lighting_array(stage, start_pos=(-2, 0, 0), count=8, spacing=3.0)
+    
     add_reference_to_stage(usd_path=ROBOT_USD_PATH, prim_path="/World/G1")
     g1_robot = Robot(prim_path="/World/G1", name="g1")
     world.scene.add(g1_robot)
@@ -165,20 +336,16 @@ def main():
     S_NUM = 15; S_H = 0.15; S_D = 0.25
     create_industrial_stairs(world, position=[3.0, 0.0, 0.0], num_steps=S_NUM, step_height=S_H, step_depth=S_D)
     
-    # Climber
-    # Start at 0, 0, 0.78 (Hip height)
-    climber = ProceduralClimber(start_pos=[0.0, 0.0, 0.78], stair_start=[3.0, 0.0, 0.0], stair_params=(S_D, S_H, S_NUM))
+    # Walker
+    walker = KinematicWalker(start_pos=[0.0, 0.0, 0.78], stair_start=[3.0, 0.0, 0.0], stair_params=(S_D, S_H, S_NUM))
     
     world.reset()
-    
-    # Hard Physics / Kinematic override
-    # We will force positions in the loop
     
     while kit.is_running():
         world.step(render=True)
         
-        # Update Procedural Robot
-        root_pos, joints = climber.update(0.016) # Assume 60hz dt
+        # Update Walker
+        root_pos, joints = walker.update(0.016) 
         
         g1_robot.set_world_pose(position=root_pos, orientation=np.array([1,0,0,0]))
         g1_robot.set_joint_positions(np.array([joints.get(n, 0.0) for n in g1_robot.dof_names]))
