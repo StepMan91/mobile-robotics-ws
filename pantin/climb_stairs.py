@@ -353,15 +353,20 @@ class SensingWalker:
         l_vec = self.l_foot - self.root_pos - np.array([0, 0.07, 0])
         hp, kp, ap = solve_leg_ik_analytic(np.array([0,0,0]), l_vec, limit)
         joints['left_hip_pitch_joint'] = hp
-        # Strict Clamp Output
         joints['left_knee_joint'] = min(kp, math.radians(limit))
         joints['left_ankle_pitch_joint'] = ap
+        # Explicitly Safe Hip Roll/Yaw
+        joints['left_hip_roll_joint'] = 0.05 # Slight abduction to clear pelvis
+        joints['left_hip_yaw_joint'] = 0.0
         
         r_vec = self.r_foot - self.root_pos - np.array([0, -0.07, 0])
         hp, kp, ap = solve_leg_ik_analytic(np.array([0,0,0]), r_vec, limit)
         joints['right_hip_pitch_joint'] = hp
         joints['right_knee_joint'] = min(kp, math.radians(limit))
         joints['right_ankle_pitch_joint'] = ap
+        # Explicitly Safe Hip Roll/Yaw
+        joints['right_hip_roll_joint'] = -0.05
+        joints['right_hip_yaw_joint'] = 0.0
         
         # 6. Arms & Head (Safe Pose)
         amp = self.profile["arm_amp"]
@@ -391,7 +396,9 @@ class SensingWalker:
 
     def cycloid_interp(self, start, end, t):
         res = (1-t)*start + t*end
-        z_lift = math.sin(t * math.pi) * 0.15 # Reduced lift for cleaner walk
+        # Use Profile Swing Height (Safe Clearance for Stairs)
+        sh = self.profile.get("swing_height", 0.15)
+        z_lift = math.sin(t * math.pi) * sh
         base_z = res[2]
         res[2] = max(start[2], end[2]) + z_lift
         return res
