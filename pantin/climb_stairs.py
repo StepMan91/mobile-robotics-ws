@@ -376,9 +376,9 @@ class SensingWalker:
         joints['left_shoulder_pitch_joint'] = -s * amp
         joints['right_shoulder_pitch_joint'] = s * amp
         
-        # Roll (Flare Out to avoid hip collision)
-        joints['left_shoulder_roll_joint'] = 0.2
-        joints['right_shoulder_roll_joint'] = -0.2
+        # Roll (Flare Out to avoid hip collision, but not too much to hit shoulder)
+        joints['left_shoulder_roll_joint'] = 0.1
+        joints['right_shoulder_roll_joint'] = -0.1
         
         # Elbows & Wrists
         joints['left_elbow_joint'] = 0.5
@@ -438,7 +438,7 @@ def main():
     S_NUM = 15; S_H = 0.15; S_D = 0.25
     create_industrial_stairs(world, position=[3.0, 0.0, 0.0], num_steps=S_NUM, step_height=S_H, step_depth=S_D)
     
-    walker = SensingWalker(start_pos=[0.0, 0.0, 0.72], stair_start=[3.0, 0.0, 0.0], stair_params=(S_D, S_H, S_NUM))
+    walker = SensingWalker(start_pos=[0.1, 0.0, 0.68], stair_start=[3.0, 0.0, 0.0], stair_params=(S_D, S_H, S_NUM))
     
     world.reset()
     
