@@ -29,16 +29,27 @@ config = {"headless": True}
 simulation_app = SimulationApp(config)
 
 # Imports after Sim Start
-import gymnasium as gym
-from isaaclab.envs import ManagerBasedRLEnv
-# Wrapper to make IsaacLab Env compatible with RSL-RL
-from isaaclab.envs import DirectMARLEnv, DirectRLEnv # Check wrappers
-# Usually we wrap the gym env.
-from rsl_rl.runners import OnPolicyRunner
+# Imports after Sim Start
+import traceback
+try:
+    import gymnasium as gym
+    print("[INFO] Imported gymnasium")
+    from isaaclab.envs import ManagerBasedRLEnv
+    print("[INFO] Imported ManagerBasedRLEnv")
+    # Wrapper to make IsaacLab Env compatible with RSL-RL
+    # from isaaclab.envs import DirectMARLEnv, DirectRLEnv # Check wrappers
+    # Usually we wrap the gym env.
+    from rsl_rl.runners import OnPolicyRunner
+    print("[INFO] Imported OnPolicyRunner")
 
-# Import Config
-import g1_locomotion
-from g1_locomotion.g1_stairs_env_cfg import G1StairsEnvCfg
+    # Import Config
+    import g1_locomotion
+    from g1_locomotion.g1_stairs_env_cfg import G1StairsEnvCfg
+    print("[INFO] Imported G1StairsEnvCfg")
+except Exception as e:
+    print(f"[ERROR] Import failed: {e}")
+    traceback.print_exc()
+    sys.exit(1)
 
 class RslRlVecEnvWrapper:
     """Wrapper to make IsaacLab Gym Env compatible with RSL-RL."""
@@ -147,4 +158,9 @@ def main():
     simulation_app.close()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"[FATAL ERROR] Main Crashed: {e}")
+        traceback.print_exc()
+        sys.exit(1)
