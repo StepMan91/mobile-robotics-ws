@@ -35,38 +35,37 @@ class RslRlVecEnvWrapper:
     def __init__(self, env):
         self.env = env
         self.num_envs = env.unwrapped.num_envs
-        self.num_obs = env.unwrapped.observation_space['policy'].shape[1]
-        self.num_actions = env.unwrapped.action_space.shape[1]
-        # RSL-RL expects num_privileged_obs
-        self.num_privileged_obs = None # Not used here
+        # Check action/obs spaces
+        if hasattr(self.env.unwrapped, "num_actions"):
+            self.num_actions = self.env.unwrapped.num_actions
+        else:
+            self.num_actions = self.env.unwrapped.action_space.shape[1]
+            
+        if hasattr(self.env.unwrapped, "num_observations"):
+            self.num_obs = self.env.unwrapped.num_observations
+        else:
+            # Try to get from observation space
+            # obs space is Dict.
+            self.num_obs = self.env.unwrapped.observation_space['policy'].shape[1]
+            
+        self.num_privileged_obs = None 
         self.device = env.unwrapped.device
         
     def step(self, actions):
-        obs, rew, terminated, truncated, infos = self.env.step(actions)
+        obs_dict, rew, terminated, truncated, extras = self.env.step(actions)
         dones = terminated | truncated
         # Returns: obs, privileged_obs, rewards, dones, infos
-        # obs dictionary? rsl_rl expects tensor?
-        # IsaacLab returns dict for observations usually.
-        # rsl_rl expects 'obs' to be tensor if simple, or handled by actor_critic.
-        
-        # Extract policy obs
-        policy_obs = obs["policy"]
-        return policy_obs, None, rew, dones, infos
+        policy_obs = obs_dict["policy"]
+        return policy_obs, None, rew, dones, extras
 
     def get_observations(self):
-        # Return policy obs
-        obs = self.env.reset()[0] # This resets? No!
-        # IsaacLab env doesn't usually track current obs in a property suitable for this?
-        # Warning: RSL-RL calls step() then uses returned values. 
-        # But for initialization?
-        # We need to return current obs.
-        # HACK: ManagerBasedRLEnv doesn't expose buffer easily?
-        # observation_manager.compute() returns result.
-        pass
+        # Recompute observations
+        # This accesses the internal manager
+        return self.env.unwrapped.observation_manager.compute()["policy"]
         
     def reset(self):
-        obs, _ = self.env.reset()
-        return obs["policy"], None
+        obs_dict, _ = self.env.reset()
+        return obs_dict["policy"], None
 
 def main():
     parser = argparse.ArgumentParser()
@@ -76,42 +75,27 @@ def main():
     # Config
     env_cfg = G1StairsEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
-    # Set device
-    env_cfg.sim.device = "cuda:0"
+    env_cfg.sim.device = "cuda:0" # Force GPU
     
     # Create Env
-    env = gym.make("Isaac-Locomotion-G1-v0", cfg=env_cfg) # Task name is just placeholder if cfg provided?
-    # Actually gym.make(..., cfg=...) works if registered OR if we use the class directly.
-    # But IsaacLab usually registers tasks.
-    # We can instantiate ManagerBasedRLEnv directly.
+    # Note: ManagerBasedRLEnv expects env_cfg
+    env = gym.make("Isaac-Locomotion-G1-v0", cfg=env_cfg)
     
-    print("[INFO] wrapping environment...")
-    # Wrap for RSL-RL
-    # IsaacLab usually provides a wrapper `isaaclab_rl.rsl_rl.RslRlVecEnvWrapper`
-    # Let's try to import it.
-    try:
-        from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
-        vec_env = RslRlVecEnvWrapper(env)
-    except ImportError:
-        print("[WARN] Could not import IsaacLab RslRlVecEnvWrapper. Using minimal local one.")
-        # Re-implement minimal wrapper logic properly involves handling get_observations.
-        # If imports fail, this might fail.
-        # For now, let's assume it works or we crash.
-        sys.exit(1)
+    # Wrap
+    print("[INFO] Wrapping environment with local RslRlVecEnvWrapper...")
+    vec_env = RslRlVecEnvWrapper(env)
 
     print("[INFO] Setting up PPO Runner...")
     
     # RSL-RL Config
-    # We need to define the agent config (PPO params).
-    # Typically loaded from yaml or dict.
     ppo_config = {
         "seed": 42,
         "runner": {
             "policy_class_name": "ActorCritic",
             "algorithm_class_name": "PPO",
             "num_steps_per_env": 24,
-            "max_iterations": 1500,
-            "save_interval": 50,
+            "max_iterations": 100, # Short run for verification
+            "save_interval": 25,
             "experiment_name": "g1_stairs",
             "run_name": "v1",
             "resume": False,
@@ -135,13 +119,14 @@ def main():
         },
         "policy": {
             "init_noise_std": 1.0,
-            "actor_hidden_dims": [512, 256, 128],
-            "critic_hidden_dims": [512, 256, 128],
-            "activation": "elu", # or 'elu'
+            "actor_hidden_dims": [128, 64, 32], # Smaller net for speed
+            "critic_hidden_dims": [128, 64, 32],
+            "activation": "elu", 
         }
     }
     
-    log_dir = os.path.join(script_dir, "logs")
+    log_dir = os.path.abspath(os.path.join(script_dir, "logs"))
+    print(f"[INFO] Logging to: {log_dir}")
     
     runner = OnPolicyRunner(vec_env, ppo_config, log_dir=log_dir, device=env_cfg.sim.device)
     
