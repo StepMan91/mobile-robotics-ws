@@ -1,3 +1,9 @@
+# Import Simulation App
+from isaacsim import SimulationApp
+
+# Configuration
+CONFIG = {"headless": True}
+simulation_app = SimulationApp(CONFIG)
 
 import omni.kit.commands
 import omni.usd
@@ -7,13 +13,6 @@ from omni.isaac.core.utils.stage import get_current_stage
 from omni.isaac.core.utils.prims import define_prim
 import omni.isaac.core.utils.numpy.rotations as rot_utils
 import numpy as np
-
-# Import Simulation App
-from isaacsim import SimulationApp
-
-# Configuration
-CONFIG = {"headless": True}
-simulation_app = SimulationApp(CONFIG)
 
 def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, step_depth=0.25):
     stage = get_current_stage()
