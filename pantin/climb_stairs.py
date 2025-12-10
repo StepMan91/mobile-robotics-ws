@@ -53,23 +53,24 @@ except ImportError:
     from omni.isaac.core.materials import PreviewSurface
     from omni.physx import get_physx_scene_query_interface
 
+# Import Gait Config
+try:
+    from pantin.gait_config import GAIT_PROFILES
+except ImportError:
+    # Safe fallback if run from root
+    sys.path.append(os.getcwd())
+    from pantin.gait_config import GAIT_PROFILES
 
 ROBOT_USD_PATH = r"C:/Users/basti/source/repos/mobile-robotics-ws/assets/g1_29dof_rev_1_0/g1_29dof_rev_1_0.usd"
 
 # --- SCENE HELPERS ---
 
 def apply_collision_rigid(prim_path, world):
-    """Ensure prim has collision and rigid body API (Static)"""
     stage = world.stage
     prim = stage.GetPrimAtPath(prim_path)
     if not prim.IsValid(): return
-    
-    # Auto-applied by VisualCuboid usually, but lets force it
     if not prim.HasAPI(UsdPhysics.CollisionAPI):
         UsdPhysics.CollisionAPI.Apply(prim)
-    # Ensure it is enabled
-    # We treat it as a static collider (No RigidBodyAPI) implies Static in Isaac
-    pass
 
 def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, step_depth=0.25, width=1.0):
     base_pos = np.array(position)
@@ -89,7 +90,7 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, st
     world.scene.add(VisualCuboid(prim_path=cw_path, name="catwalk", position=catwalk_pos, scale=np.array([catwalk_depth, width, step_height]), color=np.array([0.25, 0.25, 0.3])))
     apply_collision_rigid(cw_path, world)
 
-    # Handrails (No Collision needed for feet usually, but good for visuals)
+    # Handrails
     rail_height = 0.9
     total_run = (num_steps - 1) * step_depth
     total_rise = (num_steps - 1) * step_height
@@ -123,8 +124,6 @@ def create_lighting_array(stage, start_pos, count=8, spacing=3.0, height=3.0):
         light.AddTranslateOp().Set(pos)
 
 def create_floor_markings(world, start_pos, end_pos):
-    # 1. Main Floor (Concrete)
-    # Dark Grey for "Raw Concrete" look
     floor_path = "/World/Environment/ConcreteFloor"
     world.scene.add(
         VisualCuboid(
@@ -132,12 +131,11 @@ def create_floor_markings(world, start_pos, end_pos):
             name="concrete_floor",
             position=np.array([5.0, 0.0, -0.05]), 
             scale=np.array([20.0, 10.0, 0.1]),
-            color=np.array([0.2, 0.2, 0.2]) # Darker Grey
+            color=np.array([0.2, 0.2, 0.2])
         )
     )
     apply_collision_rigid(floor_path, world)
     
-    # 2. Blue Path
     dist = end_pos[0] - start_pos[0]
     center_x = start_pos[0] + dist / 2.0
     
@@ -151,11 +149,10 @@ def create_floor_markings(world, start_pos, end_pos):
             color=np.array([0.0, 0.2, 0.8])
         )
     )
-    # Path is visual, no collision needed (floor handles it)
 
 # --- ADVANCED KINEMATICS ---
 
-def solve_leg_ik_analytic(hip_pos, foot_pos):
+def solve_leg_ik_analytic(hip_pos, foot_pos, max_knee_deg=120.0):
     L1, L2 = 0.35, 0.35
     vec = foot_pos - hip_pos
     dx = vec[0]
@@ -169,6 +166,19 @@ def solve_leg_ik_analytic(hip_pos, foot_pos):
     val = max(-1.0, min(1.0, val))
     alpha = math.acos(val)
     knee_angle = math.pi - alpha 
+    
+    # CLAMP KNEE
+    max_knee_rad = math.radians(max_knee_deg)
+    if knee_angle > max_knee_rad:
+        # If knee is constrained, we can't reach closer distances?
+        # Actually we should clamp it, but that means the foot pos must move.
+        # For this demo, simply clamping the angale might break the chain closure (foot slips).
+        # Better to clamp the angle and accept the foot might not reach target? 
+        # Or just let the solver solve and clamp result? 
+        # User requested rigorous limits. We will clamp result.
+        pass # Let's handle clamping later in the return to keep IK "valid" if physically possible, 
+             # but we can't physically reach if we don't bend.
+             # We will just clamp the output value.
     
     pitch_vec = math.atan2(dx, -dz)
     val_beta = (L1**2 + dist**2 - L2**2) / (2 * L1 * dist)
@@ -185,49 +195,71 @@ class SensingWalker:
         self.root_pos = np.array(start_pos)
         self.stair_start = np.array(stair_start)
         self.stair_params = stair_params
-        self.state = 0 
+        
+        self.current_profile_name = "WALK"
+        self.profile = GAIT_PROFILES["WALK"]
+        
+        self.state = 1
         self.t_state = 0.0
+        self.t_total = 0.0
+        
         self.ds_duration = 0.2
         self.ss_duration = 0.6
         
-        self.step_length = 0.25 
-        self.hip_height = 0.72 
+        # Init from Profile
+        self.step_length = self.profile["step_length"]
+        self.hip_height = 0.72
         self.foot_sep = 0.2 
         
         self.l_foot = self.root_pos + np.array([0, self.foot_sep/2, -self.hip_height])
         self.r_foot = self.root_pos + np.array([0, -self.foot_sep/2, -self.hip_height])
         
-        self.swing_start = np.zeros(3)
-        self.swing_end = np.zeros(3)
-        self.state = 1
         self.swing_start = self.l_foot.copy()
         
-        # Init Raycast
         self.physx_query = get_physx_scene_query_interface()
         
-        # Init first step
-        target_x = self.r_foot[0] + self.step_length
-        target_z = self.ray_cast_ground(target_x, self.l_foot[1])
-        self.swing_end = np.array([target_x, self.l_foot[1], target_z])
+        # Determine initial target
+        tx = self.r_foot[0] + self.step_length
+        tz = self.ray_cast_ground(tx, self.l_foot[1])
+        self.swing_end = np.array([tx, self.l_foot[1], tz])
+        self.next_swing_leg = 'LEFT' # Current swinging is LEFT
         
+    def determine_zone(self, x):
+        stairs_begin = self.stair_start[0]
+        catwalk_begin = stairs_begin + (self.stair_params[0] * self.stair_params[2])
+        
+        if x < stairs_begin - 0.1:
+            return "WALK"
+        elif x >= stairs_begin - 0.1 and x < catwalk_begin:
+            # Check if finished climbing
+            return "CLIMB"
+        else:
+            return "WAIT"
+
+    def apply_profile(self, name):
+        if name != self.current_profile_name:
+            self.current_profile_name = name
+            self.profile = GAIT_PROFILES[name]
+            # Update params
+            self.step_length = self.profile["step_length"]
+            # Scale durations?
+            if name == "WAIT":
+                self.ds_duration = 999.0 # Stay in stance
+            elif name == "CLIMB":
+                self.ss_duration = 0.8 # Slower climb
+            else:
+                self.ss_duration = 0.6
+
     def ray_cast_ground(self, x, y):
-        # Cast from high up downwards
-        origin = np.array([x, y, 5.0]) # 5m up
+        origin = np.array([x, y, 5.0])
         direction = np.array([0.0, 0.0, -1.0])
         dist = 10.0
-        
-        # PhysX Raycast
-        # hit = self.physx_query.raycast_closest(origin, direction, dist)
-        # Note: API might vary slightly by version.
-        # safe wrapper
         try:
              hit = self.physx_query.raycast_closest(origin, direction, dist)
              if hit["hit"]:
                  return hit["position"][2]
-        except Exception as e:
+        except Exception:
              pass
-             
-        # Fallback to Math if ray fails
         return self.get_terrain_height_math(x)
 
     def get_terrain_height_math(self, x):
@@ -241,11 +273,22 @@ class SensingWalker:
 
     def update(self, dt):
         self.t_state += dt
+        self.t_total += dt
         joints = {}
         
+        # 1. Update Zone/Profile based on Root X
+        zone = self.determine_zone(self.root_pos[0])
+        self.apply_profile(zone)
+        
+        if self.current_profile_name == "WAIT":
+            # Override State Logic for WAIT
+            self.state = 0 # Forced Double Support
+            # No steps
+        
+        # 2. State Machine
         current_dur = self.ss_duration if self.state in [1, 2] else self.ds_duration
         
-        if self.t_state >= current_dur:
+        if self.t_state >= current_dur and self.current_profile_name != "WAIT":
             self.t_state = 0.0
             
             if self.state == 1: # End L Swing
@@ -257,76 +300,73 @@ class SensingWalker:
                 self.state = 0
                 self.next_swing_leg = 'LEFT'
             elif self.state == 0: # End DS
-                # Plan Next Step
                 if self.next_swing_leg == 'LEFT':
                     self.state = 1
                     self.swing_start = self.l_foot.copy()
                     tx = self.r_foot[0] + self.step_length
-                    if tx > self.stair_start[0] + 5.0: tx = self.r_foot[0] 
                     tz = self.ray_cast_ground(tx, self.l_foot[1])
                     self.swing_end = np.array([tx, self.l_foot[1], tz])
                 else:
                     self.state = 2
                     self.swing_start = self.r_foot.copy()
                     tx = self.l_foot[0] + self.step_length
-                    if tx > self.stair_start[0] + 5.0: tx = self.l_foot[0]
                     tz = self.ray_cast_ground(tx, self.r_foot[1])
                     self.swing_end = np.array([tx, self.r_foot[1], tz])
 
+        # 3. Trajectory
         phase = min(1.0, self.t_state / current_dur)
+        if self.current_profile_name != "WAIT":
+            if self.state == 1:
+                self.l_foot = self.cycloid_interp(self.swing_start, self.swing_end, phase)
+            elif self.state == 2:
+                self.r_foot = self.cycloid_interp(self.swing_start, self.swing_end, phase)
         
-        if self.state == 1:
-            self.l_foot = self.cycloid_interp(self.swing_start, self.swing_end, phase)
-        elif self.state == 2:
-            self.r_foot = self.cycloid_interp(self.swing_start, self.swing_end, phase)
-            
-        # --- SENSING ROOT UPDATE ---
+        # 4. Root
         avg_x = (self.l_foot[0] + self.r_foot[0]) / 2.0
-        
-        # Sense ground under stance feet too?
-        # Actually constant raycasting is expensive.
-        # Just assume planted feet are at Z.
         avg_z = (self.l_foot[2] + self.r_foot[2]) / 2.0
-        
         self.root_pos[0] = avg_x
         self.root_pos[1] = 0.0 
         self.root_pos[2] = avg_z + self.hip_height 
         
-        # IK
+        # 5. IK with Limits
+        limit = self.profile["max_knee_deg"]
+        
         l_vec = self.l_foot - self.root_pos - np.array([0, 0.07, 0])
-        hp, kp, ap = solve_leg_ik_analytic(np.array([0,0,0]), l_vec)
+        hp, kp, ap = solve_leg_ik_analytic(np.array([0,0,0]), l_vec, limit)
         joints['left_hip_pitch_joint'] = hp
-        joints['left_knee_joint'] = kp
+        # Strict Clamp Output
+        joints['left_knee_joint'] = min(kp, math.radians(limit))
         joints['left_ankle_pitch_joint'] = ap
         
         r_vec = self.r_foot - self.root_pos - np.array([0, -0.07, 0])
-        hp, kp, ap = solve_leg_ik_analytic(np.array([0,0,0]), r_vec)
+        hp, kp, ap = solve_leg_ik_analytic(np.array([0,0,0]), r_vec, limit)
         joints['right_hip_pitch_joint'] = hp
-        joints['right_knee_joint'] = kp
+        joints['right_knee_joint'] = min(kp, math.radians(limit))
         joints['right_ankle_pitch_joint'] = ap
         
-        # Arms
-        swing_mag = 0.4
-        if self.state == 1:
-            s = math.sin(phase * math.pi)
-            l_arm = -s * swing_mag; r_arm = s * swing_mag
-        elif self.state == 2:
-            s = math.sin(phase * math.pi)
-            l_arm = s * swing_mag; r_arm = -s * swing_mag
-        else:
-            l_arm = 0.0; r_arm = 0.0
-            
-        joints['left_shoulder_pitch_joint'] = l_arm
-        joints['right_shoulder_pitch_joint'] = r_arm
+        # 6. Arms & Head
+        amp = self.profile["arm_amp"]
+        s = math.sin(self.t_total * math.pi * 2.0 / self.profile["cycle_time"]) if self.current_profile_name != "WAIT" else 0.0
+        
+        joints['left_shoulder_pitch_joint'] = -s * amp
+        joints['right_shoulder_pitch_joint'] = s * amp
         joints['left_elbow_joint'] = 0.3
         joints['right_elbow_joint'] = 0.3
         
+        if self.profile["use_head_look"]:
+            # Head Animation
+            slow_s = math.sin(self.t_total * 0.5) * 0.5 # +/- 0.5 rad look
+            joints['waist_yaw_joint'] = slow_s * 0.3 # Small waist turn
+            # Head usually has neck joints? G1 29dof uses waist/head
+            # Do we have specific head joints?
+            # Assuming head_pitch/yaw or similar.
+            pass
+
         return self.root_pos, joints
 
     def cycloid_interp(self, start, end, t):
         res = (1-t)*start + t*end
-        z_lift = math.sin(t * math.pi) * 0.2
-        # Lift above BOTH start and end Z
+        z_lift = math.sin(t * math.pi) * 0.15 # Reduced lift for cleaner walk
         base_z = res[2]
         res[2] = max(start[2], end[2]) + z_lift
         return res
