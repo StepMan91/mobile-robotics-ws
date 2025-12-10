@@ -9,9 +9,16 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 source_dir = os.path.abspath(os.path.join(script_dir, "../source"))
 sys.path.append(source_dir)
 
-# Add IsaacLab path (if needed)
+# Add IsaacLab path (Parent of isaaclab package)
 isaac_lab_path = r"C:\Users\basti\source\repos\IsaacLab\source"
-sys.path.append(os.path.join(isaac_lab_path, "isaaclab"))
+if isaac_lab_path not in sys.path:
+    sys.path.append(isaac_lab_path)
+# Also append extensions/rsl_rl if needed?
+# Usually IsaacLab extensions are in source/extensions ?
+# Let's add that too just in case.
+ext_path = os.path.join(isaac_lab_path, "extensions")
+if ext_path not in sys.path:
+    sys.path.append(ext_path)
 
 # Launch Isaac Sim
 from isaacsim import SimulationApp
