@@ -1,4 +1,4 @@
 @echo off
 echo Launching Pantin CSV Visualization...
-call isaaclab.bat -p pantin/visualize_csv_isaac.py
+call "C:\isaac-sim\python.bat" pantin/visualize_csv_isaac.py
 pause
