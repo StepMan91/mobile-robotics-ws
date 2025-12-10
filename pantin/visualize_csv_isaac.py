@@ -58,7 +58,7 @@ try:
     from isaacsim.core.api.robots import Robot
     from isaacsim.core.utils.stage import add_reference_to_stage
     from omni.isaac.core.prims import XFormPrim
-    from omni.isaac.core.objects import VisualSphere
+    from omni.isaac.core.objects import VisualSphere, VisualCuboid
     # IK Imports
     from omni.isaac.motion_generation import ArticulationKinematicsSolver, LulaKinematicsSolver
 except ImportError:
@@ -66,7 +66,7 @@ except ImportError:
     from omni.isaac.core.robots import Robot
     from omni.isaac.core.utils.stage import add_reference_to_stage
     from omni.isaac.core.prims import XFormPrim
-    from omni.isaac.core.objects import VisualSphere
+    from omni.isaac.core.objects import VisualSphere, VisualCuboid
     from omni.isaac.motion_generation import ArticulationKinematicsSolver, LulaKinematicsSolver
 
 from pxr import Gf, UsdGeom
@@ -82,6 +82,57 @@ KEYPOINT_NAMES = [
     "LeftWrist", "RightWrist", "LeftHip", "RightHip", 
     "LeftKnee", "RightKnee", "LeftAnkle", "RightAnkle"
 ]
+
+def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, step_depth=0.25, width=1.0):
+    """
+    Creates an industrial-style staircase and a catwalk.
+    """
+    base_pos = np.array(position)
+    
+    # 1. Steps
+    for i in range(num_steps):
+        # Position: Forward (+X or +Y depending on orientation, let's assume +X)
+        # Up (+Z)
+        x_offset = i * step_depth
+        z_offset = i * step_height + (step_height / 2.0) # Center of box
+        
+        pos = base_pos + np.array([x_offset, 0, z_offset])
+        
+        # Create Step
+        world.scene.add(
+            VisualCuboid(
+                prim_path=f"/World/Environment/Stairs/Step_{i}",
+                name=f"step_{i}",
+                position=pos,
+                scale=np.array([step_depth, width, step_height]),
+                color=np.array([0.3, 0.3, 0.35]) # Industrial Grey
+            )
+        )
+        
+    # 2. Catwalk (Landing)
+    catwalk_depth = 2.0
+    catwalk_x = (num_steps * step_depth) + (catwalk_depth / 2.0) - (step_depth / 2.0) # Adj because step x was center
+    catwalk_z = (num_steps - 1) * step_height + step_height # Top surface
+    # Actually box center z:
+    catwalk_z_center = (num_steps - 1) * step_height + (step_height / 2.0)
+    # Wait, the last step top is at N * H.
+    # We want catwalk to flush with last step.
+    
+    catwalk_pos = base_pos + np.array([
+        (num_steps * step_depth) + (catwalk_depth / 2.0) - (step_depth), # Start after last step start
+        0, 
+        (num_steps - 1) * step_height + (step_height / 2.0)
+    ])
+    
+    world.scene.add(
+        VisualCuboid(
+            prim_path="/World/Environment/Stairs/Catwalk",
+            name="catwalk",
+            position=catwalk_pos,
+            scale=np.array([catwalk_depth, width, step_height]),
+            color=np.array([0.25, 0.25, 0.3])
+        )
+    )
 
 class SkeletonVisualizer:
     def __init__(self, keypoint_names):
@@ -115,14 +166,15 @@ class SkeletonVisualizer:
                     sphere.set_visibility(False)
 
 class CSVPlayer:
-    def __init__(self, file_path):
+    def __init__(self, file_path, scale=0.8):
         self.file_path = file_path
         self.data = []
         self.headers = []
+        self.scale = scale # Human to Robot Scale Factor
         self.load()
         
     def load(self):
-        print(f"Loading CSV: {self.file_path}")
+        print(f"Loading CSV: {self.file_path} with Scale {self.scale}")
         if not os.path.exists(self.file_path):
             print("CSV File not found!")
             return
@@ -148,13 +200,9 @@ class CSVPlayer:
             indices_y = [self.col_indices.get(f"{n}_Y") for n in ["LeftAnkle", "RightAnkle"] if self.col_indices.get(f"{n}_Y")]
             
             # Remember our Transform: Sim Z = -Cam Y (+ Offset)
-            # So we look at raw Cam Y data to find the lowest point (Max Cam Y usually, since Y is Down in some cams?)
-            # Realsense: Y is Down. So Max Y = Lowest point.
-            # Sim Z = -Cam Y. So Min (-Cam Y) is lowest point.
-            # i.e. Max (Cam Y).
             
             for idx_y in indices_y:
-                 raw_y = float(self.data[i][idx_y])
+                 raw_y = float(self.data[i][idx_y]) * self.scale
                  # Sim Z (unadjusted) = -raw_y
                  z = -raw_y
                  if z < min_z: min_z = z
@@ -183,9 +231,10 @@ class CSVPlayer:
                 z_idx = self.col_indices.get(f"{name}_Z")
                 
                 if x_idx and y_idx and z_idx:
-                    raw_x = float(row[x_idx])
-                    raw_y = float(row[y_idx])
-                    raw_z = float(row[z_idx])
+                    # Apply Scale Here
+                    raw_x = float(row[x_idx]) * self.scale
+                    raw_y = float(row[y_idx]) * self.scale
+                    raw_z = float(row[z_idx]) * self.scale
                     
                     # Transform Camera -> World (Z-up)
                     # RealSense: X-Right, Y-Down, Z-Forward
@@ -466,11 +515,15 @@ def main():
     g1_robot = Robot(prim_path="/World/G1", name="g1")
     world.scene.add(g1_robot)
     world.scene.add_default_ground_plane()
+    
+    # Add Industrial Stairs to Scene (Offset so robot doesn't start inside them)
+    create_industrial_stairs(world, position=[2.0, 2.0, 0.0])
 
     skeleton_viz = SkeletonVisualizer(KEYPOINT_NAMES)
     skeleton_viz.setup(world)
     
-    player = CSVPlayer(DEFAULT_CSV_PATH)
+    # Init Player with SCALING (0.75 for G1 approx)
+    player = CSVPlayer(DEFAULT_CSV_PATH, scale=0.75)
     
     # Init CCD
     # Warning: Initializing too early might fail validation
