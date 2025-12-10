@@ -300,16 +300,20 @@ class SensingWalker:
                 self.state = 0
                 self.next_swing_leg = 'LEFT'
             elif self.state == 0: # End DS
+                # LATCH PARAMETERS AT START OF SWING
+                self.active_step_len = self.profile["step_length"]
+                self.active_swing_height = self.profile.get("swing_height", 0.1)
+                
                 if self.next_swing_leg == 'LEFT':
                     self.state = 1
                     self.swing_start = self.l_foot.copy()
-                    tx = self.r_foot[0] + self.step_length
+                    tx = self.r_foot[0] + self.active_step_len
                     tz = self.ray_cast_ground(tx, self.l_foot[1])
                     self.swing_end = np.array([tx, self.l_foot[1], tz])
                 else:
                     self.state = 2
                     self.swing_start = self.r_foot.copy()
-                    tx = self.l_foot[0] + self.step_length
+                    tx = self.l_foot[0] + self.active_step_len
                     tz = self.ray_cast_ground(tx, self.r_foot[1])
                     self.swing_end = np.array([tx, self.r_foot[1], tz])
 
@@ -396,8 +400,8 @@ class SensingWalker:
 
     def cycloid_interp(self, start, end, t):
         res = (1-t)*start + t*end
-        # Use Profile Swing Height (Safe Clearance for Stairs)
-        sh = self.profile.get("swing_height", 0.15)
+        # Use Latched Swing Height (Safe)
+        sh = getattr(self, "active_swing_height", 0.1)
         z_lift = math.sin(t * math.pi) * sh
         base_z = res[2]
         res[2] = max(start[2], end[2]) + z_lift
