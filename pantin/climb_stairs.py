@@ -343,9 +343,23 @@ class SensingWalker:
             stance_z = max(self.l_foot[2], self.r_foot[2])
             
         # Drive Root Z from Stance Height
+        target_z = stance_z + self.hip_height 
+        
+        # Safety: Clamp change in Z to prevent snapping/explosion
+        if not hasattr(self, "prev_root_z"):
+            self.prev_root_z = target_z
+            
+        max_change = 0.1 # 10cm per frame max (Sim step is small)
+        delta = target_z - self.prev_root_z
+        delta = max(-max_change, min(max_change, delta))
+        
         self.root_pos[0] = (self.l_foot[0] + self.r_foot[0]) / 2.0
         self.root_pos[1] = 0.0 
-        self.root_pos[2] = stance_z + self.hip_height 
+        self.root_pos[2] = self.prev_root_z + delta
+        self.prev_root_z = self.root_pos[2]
+        
+        # HARD FLOOR CLAMP (Guarantee Visibility)
+        self.root_pos[2] = max(self.root_pos[2], 0.65)
         
         # Print Debug every 60 frames
         if int(self.t_total * 60) % 60 == 0:
@@ -392,8 +406,8 @@ class SensingWalker:
         
         if self.profile["use_head_look"]:
             # Head Animation
-            slow_s = math.sin(self.t_total * 0.5) * 0.5 
-            joints['waist_yaw_joint'] = slow_s * 0.2
+            # slow_s = math.sin(self.t_total * 0.5) * 0.5 
+            # joints['waist_yaw_joint'] = slow_s * 0.2
             pass
 
         return self.root_pos, joints
@@ -417,25 +431,15 @@ def main():
     g1_robot = Robot(prim_path="/World/G1", name="g1")
     world.scene.add(g1_robot)
     
-    # Enable Self Collisions
-    prim = kit.context.get_stage().GetPrimAtPath("/World/G1")
-    if prim.IsValid():
-        # Check for PhysxArticulationAPI
-        # Or UsdPhysics.ArticulationRootAPI
-        # Usually it's on the root or base_link.
-        # Let's try to find where ArticulationRoot is.
-        # G1 USD usually has it on /World/G1
-        from pxr import PhysxSchema
-        
-        # Apply/Get PhysxArticulationAPI
-        # Note: In newer Isaac Sim, it might be separate.
-        # Let's try setting the property directly if API exists.
-        physx_api = PhysxSchema.PhysxArticulationAPI.Get(kit.context.get_stage(), prim.GetPath())
-        if not physx_api:
-            physx_api = PhysxSchema.PhysxArticulationAPI.Apply(prim)
-            
-        physx_api.CreateEnabledSelfCollisionsAttr(True)
-        print("[INFO] Robot Self-Collisions ENABLED.")
+    # Enable Self Collisions - DISABLED for Stability (Prevents Explosions)
+    # prim = kit.context.get_stage().GetPrimAtPath("/World/G1")
+    # if prim.IsValid():
+    #     from pxr import PhysxSchema
+    #     physx_api = PhysxSchema.PhysxArticulationAPI.Get(kit.context.get_stage(), prim.GetPath())
+    #     if not physx_api:
+    #         physx_api = PhysxSchema.PhysxArticulationAPI.Apply(prim)
+    #     physx_api.CreateEnabledSelfCollisionsAttr(False) # EXPLICITLY FALSE
+    #     print("[INFO] Robot Self-Collisions DISABLED.")
     
     create_floor_markings(world, start_pos=[0,0,0], end_pos=[3,0,0])
     
