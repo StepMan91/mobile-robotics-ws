@@ -11,7 +11,7 @@ kit = SimulationApp(CONFIG)
 
 import omni
 import carb
-from pxr import Gf, UsdGeom, UsdLux, UsdPhysics, Sdf
+from pxr import Gf, UsdGeom, UsdLux, UsdPhysics, Sdf, PhysxSchema
 
 # --- 0. ROBUST ENVIRONMENT PATCH ---
 if "ISAAC_PATH" not in os.environ:
@@ -44,17 +44,32 @@ try:
     from isaacsim.core.utils.stage import add_reference_to_stage
     from omni.isaac.core.objects import VisualSphere, VisualCuboid, VisualCylinder
     from omni.isaac.core.materials import PreviewSurface
+    from omni.physx import get_physx_scene_query_interface
 except ImportError:
     from omni.isaac.core import World
     from omni.isaac.core.robots import Robot
     from omni.isaac.core.utils.stage import add_reference_to_stage
     from omni.isaac.core.objects import VisualSphere, VisualCuboid, VisualCylinder
     from omni.isaac.core.materials import PreviewSurface
+    from omni.physx import get_physx_scene_query_interface
 
 
 ROBOT_USD_PATH = r"C:/Users/basti/source/repos/mobile-robotics-ws/assets/g1_29dof_rev_1_0/g1_29dof_rev_1_0.usd"
 
 # --- SCENE HELPERS ---
+
+def apply_collision_rigid(prim_path, world):
+    """Ensure prim has collision and rigid body API (Static)"""
+    stage = world.stage
+    prim = stage.GetPrimAtPath(prim_path)
+    if not prim.IsValid(): return
+    
+    # Auto-applied by VisualCuboid usually, but lets force it
+    if not prim.HasAPI(UsdPhysics.CollisionAPI):
+        UsdPhysics.CollisionAPI.Apply(prim)
+    # Ensure it is enabled
+    # We treat it as a static collider (No RigidBodyAPI) implies Static in Isaac
+    pass
 
 def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, step_depth=0.25, width=1.0):
     base_pos = np.array(position)
@@ -63,14 +78,18 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, st
         x_offset = i * step_depth
         z_offset = i * step_height + (step_height / 2.0)
         pos = base_pos + np.array([x_offset, 0, z_offset])
-        world.scene.add(VisualCuboid(prim_path=f"/World/Environment/Stairs/Step_{i}", name=f"step_{i}", position=pos, scale=np.array([step_depth, width, step_height]), color=np.array([0.3, 0.3, 0.35])))
-    
+        prim_path = f"/World/Environment/Stairs/Step_{i}"
+        world.scene.add(VisualCuboid(prim_path=prim_path, name=f"step_{i}", position=pos, scale=np.array([step_depth, width, step_height]), color=np.array([0.3, 0.3, 0.35])))
+        apply_collision_rigid(prim_path, world)
+
     # Catwalk
     catwalk_depth = 2.0
     catwalk_pos = base_pos + np.array([(num_steps * step_depth) + (catwalk_depth / 2.0) - (step_depth), 0, (num_steps - 1) * step_height + (step_height / 2.0)])
-    world.scene.add(VisualCuboid(prim_path="/World/Environment/Stairs/Catwalk", name="catwalk", position=catwalk_pos, scale=np.array([catwalk_depth, width, step_height]), color=np.array([0.25, 0.25, 0.3])))
+    cw_path = "/World/Environment/Stairs/Catwalk"
+    world.scene.add(VisualCuboid(prim_path=cw_path, name="catwalk", position=catwalk_pos, scale=np.array([catwalk_depth, width, step_height]), color=np.array([0.25, 0.25, 0.3])))
+    apply_collision_rigid(cw_path, world)
 
-    # Handrails
+    # Handrails (No Collision needed for feet usually, but good for visuals)
     rail_height = 0.9
     total_run = (num_steps - 1) * step_depth
     total_rise = (num_steps - 1) * step_height
@@ -98,234 +117,188 @@ def create_lighting_array(stage, start_pos, count=8, spacing=3.0, height=3.0):
         pos = Gf.Vec3f(x, start_pos[1], start_pos[2] + height)
         light_path = f"/World/Lights/Light_{i}"
         light = UsdLux.SphereLight.Define(stage, light_path)
-        light.CreateIntensityAttr(80000.0) # Brighter
+        light.CreateIntensityAttr(80000.0) 
         light.CreateRadiusAttr(0.15)
-        light.CreateColorAttr(Gf.Vec3f(0.9, 0.9, 1.0)) # Cool White Industrial
+        light.CreateColorAttr(Gf.Vec3f(0.9, 0.9, 1.0)) 
         light.AddTranslateOp().Set(pos)
 
 def create_floor_markings(world, start_pos, end_pos):
-    """
-    Creates a concrete floor and a blue path strip.
-    """
-    # 1. Main Floor (Concrete) - Big Area
+    # 1. Main Floor (Concrete)
+    # Dark Grey for "Raw Concrete" look
+    floor_path = "/World/Environment/ConcreteFloor"
     world.scene.add(
         VisualCuboid(
-            prim_path="/World/Environment/ConcreteFloor",
+            prim_path=floor_path,
             name="concrete_floor",
-            position=np.array([5.0, 0.0, -0.05]), # Slightly below zero
+            position=np.array([5.0, 0.0, -0.05]), 
             scale=np.array([20.0, 10.0, 0.1]),
-            color=np.array([0.4, 0.4, 0.4])
+            color=np.array([0.2, 0.2, 0.2]) # Darker Grey
         )
     )
+    apply_collision_rigid(floor_path, world)
     
     # 2. Blue Path
-    # Determine length
     dist = end_pos[0] - start_pos[0]
     center_x = start_pos[0] + dist / 2.0
     
+    path_path = "/World/Environment/BluePath"
     world.scene.add(
         VisualCuboid(
-            prim_path="/World/Environment/BluePath",
+            prim_path=path_path,
             name="blue_path",
-            position=np.array([center_x, 0.0, 0.005]), # Just above floor
-            scale=np.array([dist, 0.6, 0.01]), # 0.6m Width
+            position=np.array([center_x, 0.0, 0.005]), 
+            scale=np.array([dist, 0.6, 0.01]), 
             color=np.array([0.0, 0.2, 0.8])
         )
     )
+    # Path is visual, no collision needed (floor handles it)
 
 # --- ADVANCED KINEMATICS ---
 
 def solve_leg_ik_analytic(hip_pos, foot_pos):
-    """
-    Returns (hip_pitch, knee_pitch, ankle_pitch) for G1 leg.
-    Lengths: Thigh=0.35, Shin=0.35 (approx).
-    """
     L1, L2 = 0.35, 0.35
-    
-    # Vector Hip->Foot
     vec = foot_pos - hip_pos
-    # Local Frame: Hip is origin. Forward=X, Up=Z?
-    # No, usually Hip frame Z is down or similar. 
-    # Let's work in World Frame component logic relative to Hip.
-    
-    dx = vec[0] # Forward diff
-    dz = vec[2] # Vertical diff (usually negative)
-    
+    dx = vec[0]
+    dz = vec[2]
     dist_sq = dx**2 + dz**2
     dist = math.sqrt(dist_sq)
-    
-    # Clamp Reach
     dist = min(dist, (L1 + L2) * 0.999)
     dist = max(dist, 0.1)
     
-    # Knee Angle (Law of Cosines)
-    # c^2 = a^2 + b^2 - 2ab cos(C) -> dist^2 = L1^2 + L2^2 - 2 L1 L2 cos(pi - knee)
-    # cos(pi - knee) = (L1^2 + L2^2 - dist^2) / (2 L1 L2)
     val = (L1**2 + L2**2 - dist**2) / (2 * L1 * L2)
     val = max(-1.0, min(1.0, val))
-    alpha = math.acos(val) # Angle inside triangle opposite to dist
-    # Knee bend = pi - alpha? No. Alpha is angle at Knee vertex.
-    # True Knee Joint Angle usually deviates from straight (0).
+    alpha = math.acos(val)
     knee_angle = math.pi - alpha 
     
-    # Hip Angle
-    # Pitch of the Hip->Foot vector
-    # atan2(dz, dx)? 
-    # If dx=0, dz=-0.7 -> -pi/2.
-    gamma = math.atan2(-dz, dx) # Angle from Horizontal? (Positive down?)
-    # Wait, lets use standard atan2(z, x)
-    # pitch_vec = atan2(dx, -dz) -> 0 if vertical down. + if forward.
     pitch_vec = math.atan2(dx, -dz)
-    
-    # Additional angle inside triangle at Hip
-    # L2^2 = L1^2 + dist^2 - 2 L1 dist cos(beta)
     val_beta = (L1**2 + dist**2 - L2**2) / (2 * L1 * dist)
     val_beta = max(-1.0, min(1.0, val_beta))
     beta = math.acos(val_beta)
     
     hip_pitch = pitch_vec + beta
-    
-    # Ankle Pitch
-    # We want Foot parallel to ground (Angle 0 global pitch)
-    # Sum of angles = hip_pitch - knee_angle + ankle_pitch = 0  (Sign convention varies)
-    # If Hip Pitch is positive forward, Knee Pitch positive backward (bend)...
-    # G1: Hip Pitch + -> Leg Forward. Knee Pitch + -> Bend.
-    # Thigh angle = Hip Pitch.
-    # Shin global = Hip Pitch - Knee Pitch.
-    # Foot global = Shin global + Ankle Pitch.
-    # 0 = Hp - Kp + Ap => Ap = Kp - Hp
     ankle_pitch = -(hip_pitch - knee_angle)
     
     return hip_pitch, knee_angle, ankle_pitch
 
-class ProfessionalWalker:
+class SensingWalker:
     def __init__(self, start_pos, stair_start, stair_params):
         self.root_pos = np.array(start_pos)
         self.stair_start = np.array(stair_start)
         self.stair_params = stair_params
-        
-        # State Machine
-        # 0: Double Support (Both feet planted)
-        # 1: Left Swing (Left moving, Right planted)
-        # 2: Right Swing (Right moving, Left planted)
         self.state = 0 
         self.t_state = 0.0
+        self.ds_duration = 0.2
+        self.ss_duration = 0.6
         
-        # Timing
-        self.ds_duration = 0.2  # Double support (transfer)
-        self.ss_duration = 0.6  # Single support (swing)
+        self.step_length = 0.25 
+        self.hip_height = 0.72 
+        self.foot_sep = 0.2 
         
-        # Geometry
-        self.step_length = 0.25 # Short, stable steps
-        self.hip_height = 0.72 # Constant Hip Height relative to stance foot
-        self.foot_sep = 0.2 # Lateral separation
-        
-        # Feet World Pos
         self.l_foot = self.root_pos + np.array([0, self.foot_sep/2, -self.hip_height])
         self.r_foot = self.root_pos + np.array([0, -self.foot_sep/2, -self.hip_height])
         
-        # Trajectory
         self.swing_start = np.zeros(3)
         self.swing_end = np.zeros(3)
-        
-        # Start walking immediately
-        self.state = 1 # Start Left Swing
+        self.state = 1
         self.swing_start = self.l_foot.copy()
-        target_x = self.r_foot[0] + self.step_length # Step ahead of right foot
-        target_z = self.get_terrain_height(target_x)
+        
+        # Init Raycast
+        self.physx_query = get_physx_scene_query_interface()
+        
+        # Init first step
+        target_x = self.r_foot[0] + self.step_length
+        target_z = self.ray_cast_ground(target_x, self.l_foot[1])
         self.swing_end = np.array([target_x, self.l_foot[1], target_z])
         
-    def get_terrain_height(self, x):
+    def ray_cast_ground(self, x, y):
+        # Cast from high up downwards
+        origin = np.array([x, y, 5.0]) # 5m up
+        direction = np.array([0.0, 0.0, -1.0])
+        dist = 10.0
+        
+        # PhysX Raycast
+        # hit = self.physx_query.raycast_closest(origin, direction, dist)
+        # Note: API might vary slightly by version.
+        # safe wrapper
+        try:
+             hit = self.physx_query.raycast_closest(origin, direction, dist)
+             if hit["hit"]:
+                 return hit["position"][2]
+        except Exception as e:
+             pass
+             
+        # Fallback to Math if ray fails
+        return self.get_terrain_height_math(x)
+
+    def get_terrain_height_math(self, x):
         if x < self.stair_start[0]: return 0.0
         rx = x - self.stair_start[0]
         step_idx = int(rx / self.stair_params[0])
         if step_idx < 0: return 0.0
         if step_idx >= self.stair_params[2]: 
-            # On Catwalk
             return self.stair_params[2] * self.stair_params[1]
-        
-        # On Step
         return (step_idx + 1) * self.stair_params[1]
 
     def update(self, dt):
         self.t_state += dt
-        
         joints = {}
         
-        # --- STATE MACHINE TRANSFORMATIONS ---
-        
-        # Check Transitions
         current_dur = self.ss_duration if self.state in [1, 2] else self.ds_duration
         
         if self.t_state >= current_dur:
             self.t_state = 0.0
             
-            if self.state == 1: # End Left Swing -> Double Support
-                self.l_foot = self.swing_end.copy() # Plant
+            if self.state == 1: # End L Swing
+                self.l_foot = self.swing_end.copy()
                 self.state = 0
                 self.next_swing_leg = 'RIGHT'
-                
-            elif self.state == 2: # End Right Swing -> Double Support
-                self.r_foot = self.swing_end.copy() # Plant
+            elif self.state == 2: # End R Swing
+                self.r_foot = self.swing_end.copy()
                 self.state = 0
                 self.next_swing_leg = 'LEFT'
-                
-            elif self.state == 0: # End Double Support -> Swing
+            elif self.state == 0: # End DS
+                # Plan Next Step
                 if self.next_swing_leg == 'LEFT':
                     self.state = 1
                     self.swing_start = self.l_foot.copy()
-                    # Plan Next Step
-                    # Target X = Stance Foot (R) X + Step Length
                     tx = self.r_foot[0] + self.step_length
-                    # Stop if end of catwalk
-                    if tx > self.stair_start[0] + 5.0: tx = self.r_foot[0] # Stop
-                    tz = self.get_terrain_height(tx)
+                    if tx > self.stair_start[0] + 5.0: tx = self.r_foot[0] 
+                    tz = self.ray_cast_ground(tx, self.l_foot[1])
                     self.swing_end = np.array([tx, self.l_foot[1], tz])
                 else:
                     self.state = 2
                     self.swing_start = self.r_foot.copy()
                     tx = self.l_foot[0] + self.step_length
                     if tx > self.stair_start[0] + 5.0: tx = self.l_foot[0]
-                    tz = self.get_terrain_height(tx)
+                    tz = self.ray_cast_ground(tx, self.r_foot[1])
                     self.swing_end = np.array([tx, self.r_foot[1], tz])
 
-        # --- UPDATE TRAJECTORIES ---
-        
         phase = min(1.0, self.t_state / current_dur)
         
-        if self.state == 1: # Left Swing
-            # Cycloid Swing
+        if self.state == 1:
             self.l_foot = self.cycloid_interp(self.swing_start, self.swing_end, phase)
-        elif self.state == 2: # Right Swing
+        elif self.state == 2:
             self.r_foot = self.cycloid_interp(self.swing_start, self.swing_end, phase)
             
-        # --- ROOT UPDATE ---
-        # Constant Velocity X approximation
-        # Root X is average of feet X?
-        # Or interpolate Root X linearly during DS and SS.
-        # To avoid rotation:
-        # Root Y = 0 (Fixed center path)
-        # Root X = (L_Foot_X + R_Foot_X) / 2.0
-        # Root Z = Average(Foot_Z) + Hip_Height
-        
-        # To prevent "flying"/"going under", we CLAMP Root Z to minimum
-        
+        # --- SENSING ROOT UPDATE ---
         avg_x = (self.l_foot[0] + self.r_foot[0]) / 2.0
+        
+        # Sense ground under stance feet too?
+        # Actually constant raycasting is expensive.
+        # Just assume planted feet are at Z.
         avg_z = (self.l_foot[2] + self.r_foot[2]) / 2.0
         
         self.root_pos[0] = avg_x
-        self.root_pos[1] = 0.0 # Strict Line
-        self.root_pos[2] = max(avg_z + self.hip_height, self.hip_height) # Clamp Floor
+        self.root_pos[1] = 0.0 
+        self.root_pos[2] = avg_z + self.hip_height 
         
-        # --- SOLVE IK ---
-        # Left
-        l_vec = self.l_foot - self.root_pos - np.array([0, 0.07, 0]) # Hip offset
-        hp, kp, ap = solve_leg_ik_analytic(np.array([0,0,0]), l_vec) # Local vector
+        # IK
+        l_vec = self.l_foot - self.root_pos - np.array([0, 0.07, 0])
+        hp, kp, ap = solve_leg_ik_analytic(np.array([0,0,0]), l_vec)
         joints['left_hip_pitch_joint'] = hp
         joints['left_knee_joint'] = kp
         joints['left_ankle_pitch_joint'] = ap
         
-        # Right
         r_vec = self.r_foot - self.root_pos - np.array([0, -0.07, 0])
         hp, kp, ap = solve_leg_ik_analytic(np.array([0,0,0]), r_vec)
         joints['right_hip_pitch_joint'] = hp
@@ -333,18 +306,13 @@ class ProfessionalWalker:
         joints['right_ankle_pitch_joint'] = ap
         
         # Arms
-        # Counter-swing to legs
-        # Left Leg Phase (0 if stance, 1 if swing end)
         swing_mag = 0.4
-        if self.state == 1: # Left Moving Fwd
+        if self.state == 1:
             s = math.sin(phase * math.pi)
-            # Left Arm moves Back
-            l_arm = -s * swing_mag
-            r_arm = s * swing_mag
+            l_arm = -s * swing_mag; r_arm = s * swing_mag
         elif self.state == 2:
             s = math.sin(phase * math.pi)
-            l_arm = s * swing_mag
-            r_arm = -s * swing_mag
+            l_arm = s * swing_mag; r_arm = -s * swing_mag
         else:
             l_arm = 0.0; r_arm = 0.0
             
@@ -356,44 +324,29 @@ class ProfessionalWalker:
         return self.root_pos, joints
 
     def cycloid_interp(self, start, end, t):
-        # Linear X/Y
         res = (1-t)*start + t*end
-        
-        # Cycloid Z Lift
-        # Lift High enough to clear steps (0.15)
-        # Add buffer
-        clearance = 0.2
-        
-        # If climbing, we need more lift?
-        # Cycloid: Z += R * sin(pi * t)
-        
-        z_lift = math.sin(t * math.pi) * clearance
-        
-        res[2] += z_lift
+        z_lift = math.sin(t * math.pi) * 0.2
+        # Lift above BOTH start and end Z
+        base_z = res[2]
+        res[2] = max(start[2], end[2]) + z_lift
         return res
 
 def main():
     world = World()
     stage = kit.context.get_stage()
     
-    # Scene Setup
     create_lighting_array(stage, start_pos=(-2, 0, 0), count=8, spacing=3.0)
     
-    # Robot
     add_reference_to_stage(usd_path=ROBOT_USD_PATH, prim_path="/World/G1")
     g1_robot = Robot(prim_path="/World/G1", name="g1")
     world.scene.add(g1_robot)
-    # create_floor_markings includes the concrete floor, removing default ground plane to avoid z-fighting or keeping it lower
-    # world.scene.add_default_ground_plane() 
     
     create_floor_markings(world, start_pos=[0,0,0], end_pos=[3,0,0])
     
-    # Stairs Params
     S_NUM = 15; S_H = 0.15; S_D = 0.25
     create_industrial_stairs(world, position=[3.0, 0.0, 0.0], num_steps=S_NUM, step_height=S_H, step_depth=S_D)
     
-    # Walker
-    walker = ProfessionalWalker(start_pos=[0.0, 0.0, 0.72], stair_start=[3.0, 0.0, 0.0], stair_params=(S_D, S_H, S_NUM))
+    walker = SensingWalker(start_pos=[0.0, 0.0, 0.72], stair_start=[3.0, 0.0, 0.0], stair_params=(S_D, S_H, S_NUM))
     
     world.reset()
     
