@@ -33,24 +33,19 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, st
         z = position[2] + i * step_height + (step_height/2)
         y = position[1]
         
-        # Create Visual Step
+        # Create Visual Step using simple definition to avoid Auto-Xform confusion
+        # Or Just use default and XformCommonAPI
         omni.kit.commands.execute('CreateMeshPrimWithDefaultXform',
             prim_type='Cube',
             prim_path=step_path)
             
         prim = stage.GetPrimAtPath(step_path)
         
-        # Transform (Scale to step shape)
-        # Cube default is 1.0 size (-0.5 to 0.5)
-        # We want X=depth, Y=width=1.0, Z=height
-        
-        # Scale
-        # Note: Scale is applied to unit cube.
-        # We want width = 1.0m (Standard).
-        
-        xform = UsdGeom.Xformable(prim)
-        xform.AddTranslateOp().Set(Gf.Vec3d(x, y, z))
-        xform.AddScaleOp().Set(Gf.Vec3d(step_depth, 1.0, step_height))
+        # Use XformCommonAPI to set transform safely
+        xform_api = UsdGeom.XformCommonAPI(prim)
+        # Note: SetTranslate, SetScale, SetRotate
+        xform_api.SetTranslate(Gf.Vec3d(x, y, z))
+        xform_api.SetScale(Gf.Vec3d(step_depth, 1.0, step_height))
         
         # Collision
         UsdPhysics.CollisionAPI.Apply(prim)
@@ -62,84 +57,57 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, st
             
     # Platform at top
     plat_path = f"{base_path}/TopPlatform"
-    px = position[0] + num_steps * step_depth + (1.0) # 2m deep platform center? No
-    # Last step end X = start + num*depth.
-    # Platform center X = end + plat_depth/2 - step_depth/2?
-    # Simpler:
-    last_x = position[0] + (num_steps-1) * step_depth
     last_z = position[2] + (num_steps-1) * step_height + (step_height/2)
-    
     plat_depth = 2.0
-    plat_z = last_z # Same height as last step? Or one higher? 
-    # Usually platform is the Nth step.
-    # Let's say top platform continues from last step level.
-    
-    # Actually create_industrial_stairs in climb_stairs.py seemingly made a catwalk.
-    # Let's use simple logic: Platform is next step.
-    
-    # We want a 2m long platform.
-    # Center X = (Start of Platform) + 1.0
-    # Start of Platform = (Last Step Center) + Depth/2?
+    # Center X
     plat_center_x = (position[0] + num_steps * step_depth) + (plat_depth / 2.0) - (step_depth / 2.0) 
-    # This aligns the edge.
     
     omni.kit.commands.execute('CreateMeshPrimWithDefaultXform',
         prim_type='Cube',
         prim_path=plat_path)
     prim = stage.GetPrimAtPath(plat_path)
-    xform = UsdGeom.Xformable(prim)
-    xform.AddTranslateOp().Set(Gf.Vec3d(plat_center_x, position[1], last_z))
-    xform.AddScaleOp().Set(Gf.Vec3d(plat_depth, 1.0, step_height))
+    
+    xform_api = UsdGeom.XformCommonAPI(prim)
+    xform_api.SetTranslate(Gf.Vec3d(plat_center_x, position[1], last_z))
+    xform_api.SetScale(Gf.Vec3d(plat_depth, 1.0, step_height))
+    
     UsdPhysics.CollisionAPI.Apply(prim)
     omni.kit.commands.execute('BindMaterial', prim_path=plat_path, material_path=mat_path)
     
     # HANDRAIL
-    # Create simple cylinder handle
     rail_path = "/World/Handrail"
     omni.kit.commands.execute('CreateMeshPrimWithDefaultXform',
         prim_type='Cylinder',
         prim_path=rail_path)
     
     # Geometry:
-    # Start: (3.0, 0.6, 1.0) # approx
-    # End: Top of stairs.
-    # Slope calculation.
     run = num_steps * step_depth
     rise = num_steps * step_height
-    length = np.sqrt(run**2 + rise**2) + 2.0 # Extend past top
+    length = np.sqrt(run**2 + rise**2) + 2.0 
     angle = np.arctan2(rise, run)
     
     # Center position
     cx = position[0] + run/2.0
-    cz = position[2] + rise/2.0 + 0.9 # 0.9m rail height
-    cy = position[1] + 0.45 # Check side? Width 1.0 -> +/- 0.5. Rail at 0.45 is good.
+    cz = position[2] + rise/2.0 + 0.9 
+    cy = position[1] + 0.45 
     
     prim = stage.GetPrimAtPath(rail_path)
-    xform = UsdGeom.Xformable(prim)
+    xform_api = UsdGeom.XformCommonAPI(prim)
+    xform_api.SetTranslate(Gf.Vec3d(cx, cy, cz))
+    xform_api.SetScale(Gf.Vec3d(0.04, 0.04, length))
     
-    # Rotate pitch (Y axis rotation)
-    # Default cylinder is along Z? or Y? Usually Y or Z.
-    # If Z, we need to rotate around Y.
-    # Check default axis. 
-    # Let's generic rotate.
+    # Rotate: Cylinder is usually Z-Axis aligned.
+    # We want to pitch it up around Y axis.
+    # XformCommonAPI SetRotate uses (h, p, r) or X,Y,Z euler?
+    # It takes Vec3f rotation in degrees (XYZ usually).
+    # We want Y rotation of -(90 + angle)?
+    # Wait, To make Z axis point along the slope:
+    # 1. Rotate Y by 90 (Points Z along X).
+    # 2. Rotate Y by -degrees(angle) (Pitch up).
+    # Total Y = 90 - degrees(angle).
     
-    # Rotate -angle degrees around Y (Pitch up).
-    # Convert to degrees
-    deg = -np.degrees(angle)
-    
-    # But Cylinder default orientation usually Z-up. 
-    # To make it "forward" (X), we rotate 90 deg Y.
-    # Combined: 90 + angle?
-    
-    # Proper transform:
-    # 1. Scale length (Height in Z) -> length
-    # 2. Radius -> 0.02
-    # 3. Rotate to slope.
-    
-    # Or just use Xform:
-    xform.AddTranslateOp().Set(Gf.Vec3d(cx, cy, cz))
-    xform.AddRotateYOp().Set(90 + deg) # Check signs
-    xform.AddScaleOp().Set(Gf.Vec3d(0.04, 0.04, length)) # Radius 2cm
+    deg = np.degrees(angle)
+    xform_api.SetRotate(Gf.Vec3f(0.0, 90.0 - deg, 0.0))
     
     UsdPhysics.CollisionAPI.Apply(prim)
 
