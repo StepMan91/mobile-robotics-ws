@@ -208,8 +208,8 @@ class SensingWalker:
         
         # Init from Profile
         self.step_length = self.profile["step_length"]
-        self.hip_height = 0.72
-        self.foot_sep = 0.2 
+        self.hip_height = 0.68 # Reduced from 0.72 to prevent hyperextension (0.35+0.35=0.70 max)
+        self.foot_sep = 0.2
         
         self.l_foot = self.root_pos + np.array([0, self.foot_sep/2, -self.hip_height])
         self.r_foot = self.root_pos + np.array([0, -self.foot_sep/2, -self.hip_height])
@@ -363,22 +363,28 @@ class SensingWalker:
         joints['right_knee_joint'] = min(kp, math.radians(limit))
         joints['right_ankle_pitch_joint'] = ap
         
-        # 6. Arms & Head
+        # 6. Arms & Head (Safe Pose)
         amp = self.profile["arm_amp"]
         s = math.sin(self.t_total * math.pi * 2.0 / self.profile["cycle_time"]) if self.current_profile_name != "WAIT" else 0.0
         
+        # Pitch (Swing)
         joints['left_shoulder_pitch_joint'] = -s * amp
         joints['right_shoulder_pitch_joint'] = s * amp
-        joints['left_elbow_joint'] = 0.3
-        joints['right_elbow_joint'] = 0.3
+        
+        # Roll (Flare Out to avoid hip collision)
+        joints['left_shoulder_roll_joint'] = 0.2
+        joints['right_shoulder_roll_joint'] = -0.2
+        
+        # Elbows & Wrists
+        joints['left_elbow_joint'] = 0.5
+        joints['right_elbow_joint'] = 0.5
+        joints['left_wrist_roll_joint'] = 0.0
+        joints['right_wrist_roll_joint'] = 0.0
         
         if self.profile["use_head_look"]:
             # Head Animation
-            slow_s = math.sin(self.t_total * 0.5) * 0.5 # +/- 0.5 rad look
-            joints['waist_yaw_joint'] = slow_s * 0.3 # Small waist turn
-            # Head usually has neck joints? G1 29dof uses waist/head
-            # Do we have specific head joints?
-            # Assuming head_pitch/yaw or similar.
+            slow_s = math.sin(self.t_total * 0.5) * 0.5 
+            joints['waist_yaw_joint'] = slow_s * 0.2
             pass
 
         return self.root_pos, joints
@@ -399,6 +405,26 @@ def main():
     add_reference_to_stage(usd_path=ROBOT_USD_PATH, prim_path="/World/G1")
     g1_robot = Robot(prim_path="/World/G1", name="g1")
     world.scene.add(g1_robot)
+    
+    # Enable Self Collisions
+    prim = kit.context.get_stage().GetPrimAtPath("/World/G1")
+    if prim.IsValid():
+        # Check for PhysxArticulationAPI
+        # Or UsdPhysics.ArticulationRootAPI
+        # Usually it's on the root or base_link.
+        # Let's try to find where ArticulationRoot is.
+        # G1 USD usually has it on /World/G1
+        from pxr import PhysxSchema
+        
+        # Apply/Get PhysxArticulationAPI
+        # Note: In newer Isaac Sim, it might be separate.
+        # Let's try setting the property directly if API exists.
+        physx_api = PhysxSchema.PhysxArticulationAPI.Get(kit.context.get_stage(), prim.GetPath())
+        if not physx_api:
+            physx_api = PhysxSchema.PhysxArticulationAPI.Apply(prim)
+            
+        physx_api.CreateEnabledSelfCollisionsAttr(True)
+        print("[INFO] Robot Self-Collisions ENABLED.")
     
     create_floor_markings(world, start_pos=[0,0,0], end_pos=[3,0,0])
     
