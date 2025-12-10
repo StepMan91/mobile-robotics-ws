@@ -2,6 +2,16 @@ import sys
 import os
 import math
 import time
+import numpy as np
+from isaacsim import SimulationApp
+
+# --- CONFIG ---
+CONFIG = {"headless": False, "install_signal_handlers": False, "width": 1280, "height": 720}
+kit = SimulationApp(CONFIG)
+
+import omni
+import carb
+from pxr import Gf, UsdGeom
 
 # --- 0. ROBUST ENVIRONMENT PATCH ---
 if "ISAAC_PATH" not in os.environ:
@@ -28,15 +38,6 @@ if "ISAAC_PATH" not in os.environ:
         except ImportError:
             pass
 
-from isaacsim import SimulationApp
-CONFIG = {"headless": False, "install_signal_handlers": False, "width": 1280, "height": 720}
-kit = SimulationApp(CONFIG)
-
-import omni
-import carb
-import csv
-import numpy as np
-
 try:
     from isaacsim.core.api.world import World
     from isaacsim.core.api.robots import Robot
@@ -48,18 +49,8 @@ except ImportError:
     from omni.isaac.core.utils.stage import add_reference_to_stage
     from omni.isaac.core.objects import VisualSphere, VisualCuboid, VisualCylinder
 
-from pxr import Gf, UsdGeom
 
-# --- CONFIG ---
-DEFAULT_CSV_PATH = os.path.join(os.path.dirname(__file__), "recordings/recording_20251206_205703.csv")
 ROBOT_USD_PATH = r"C:/Users/basti/source/repos/mobile-robotics-ws/assets/g1_29dof_rev_1_0/g1_29dof_rev_1_0.usd"
-
-KEYPOINT_NAMES = [
-    "Nose", "LeftEye", "RightEye", "LeftEar", "RightEar", 
-    "LeftShoulder", "RightShoulder", "LeftElbow", "RightElbow", 
-    "LeftWrist", "RightWrist", "LeftHip", "RightHip", 
-    "LeftKnee", "RightKnee", "LeftAnkle", "RightAnkle"
-]
 
 def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, step_depth=0.25, width=1.0):
     base_pos = np.array(position)
@@ -97,85 +88,6 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, st
              post_pos = base_pos + np.array([px, y_off, pz + rail_height/2.0])
              world.scene.add(VisualCylinder(prim_path=f"/World/Environment/Stairs/Post_{idx}_{p_idx}", name=f"post_{idx}_{p_idx}", position=post_pos, scale=np.array([0.02, 0.02, rail_height]), color=np.array([0.2, 0.2, 0.2])))
 
-class SkeletonVisualizer:
-    def __init__(self, keypoint_names):
-        self.spheres = []
-        self.names = keypoint_names
-        
-    def setup(self, world):
-        self.root_path = "/World/Skeleton_GT"
-        for i, name in enumerate(self.names):
-            prim_path = f"{self.root_path}/{name}"
-            try:
-                sphere = VisualSphere(prim_path=prim_path, name=name, position=np.array([0, 0, 0]), scale=np.array([0.05, 0.05, 0.05]), color=np.array([1.0, 0.0, 0.0]))
-                self.spheres.append(sphere)
-            except: pass
-
-    def update(self, keypoints_3d):
-        for i, sphere in enumerate(self.spheres):
-            if i < len(keypoints_3d):
-                pos = keypoints_3d[i]
-                if np.linalg.norm(pos) > 0.01:
-                    sphere.set_local_pose(translation=pos)
-                    sphere.set_visibility(True)
-                else:
-                    sphere.set_visibility(False)
-
-class CSVPlayer:
-    def __init__(self, file_path, scale=0.8):
-        self.file_path = file_path
-        self.data = []
-        self.headers = []
-        self.scale = scale
-        self.load()
-        
-    def load(self):
-        if not os.path.exists(self.file_path): return
-        with open(self.file_path, 'r') as f:
-            reader = csv.reader(f)
-            self.headers = next(reader)
-            self.col_indices = {}
-            for idx, col in enumerate(self.headers):
-                if "_X" in col or "_Y" in col or "_Z" in col: self.col_indices[col] = idx
-            for row in reader:
-                if len(row) > 0: self.data.append(row)
-        self.calibrate_height()
-
-    def calibrate_height(self):
-        min_z = float('inf')
-        for i in range(min(100, len(self.data))):
-            indices_y = [self.col_indices.get(f"{n}_Y") for n in ["LeftAnkle", "RightAnkle"] if self.col_indices.get(f"{n}_Y")]
-            for idx_y in indices_y:
-                 z = -(float(self.data[i][idx_y]) * self.scale)
-                 if z < min_z: min_z = z
-        self.z_offset = (0.05 - min_z) if min_z != float('inf') else 0.95
-
-    def get_frame_keypoints(self, frame_idx):
-        if frame_idx >= len(self.data): return None
-        row = self.data[frame_idx]
-        points_list = []
-        points_dict = {}
-        for name in KEYPOINT_NAMES:
-            try:
-                x_idx = self.col_indices.get(f"{name}_X")
-                y_idx = self.col_indices.get(f"{name}_Y")
-                z_idx = self.col_indices.get(f"{name}_Z")
-                if x_idx and y_idx and z_idx:
-                    raw_x = float(row[x_idx]) * self.scale
-                    raw_y = float(row[y_idx]) * self.scale
-                    raw_z = float(row[z_idx]) * self.scale
-                    # Mirroring Fix
-                    p = np.array([raw_z, raw_x, -raw_y + getattr(self, 'z_offset', 0.95)])
-                    if np.linalg.norm(p) < 0.1 or (raw_x == 0 and raw_y == 0): p = np.array([0,0,0])
-                    points_list.append(p)
-                    points_dict[name] = p if np.linalg.norm(p) > 0.1 else None
-                else: points_list.append(np.array([0,0,0])); points_dict[name] = None
-            except: points_list.append(np.array([0,0,0])); points_dict[name] = None
-        
-        if points_dict.get('LeftHip') is not None and points_dict.get('RightHip') is not None:
-             points_dict['Pelvis'] = (points_dict['LeftHip'] + points_dict['RightHip']) / 2.0
-             
-        return points_list, points_dict, True
 
 class ProceduralClimber:
     def __init__(self, start_pos, stair_start, stair_params):
@@ -253,48 +165,19 @@ def main():
     S_NUM = 15; S_H = 0.15; S_D = 0.25
     create_industrial_stairs(world, position=[3.0, 0.0, 0.0], num_steps=S_NUM, step_height=S_H, step_depth=S_D)
     
-    # Viz
-    skeleton_viz = SkeletonVisualizer(KEYPOINT_NAMES)
-    skeleton_viz.setup(world)
-    player = CSVPlayer(DEFAULT_CSV_PATH, scale=0.75)
-    
-    # Climber (Start at origin, stairs at X=2.0)
-    # Robot is at [0,0,0]. Stairs are at [2,2,0] (World Coords).
-    # Wait, create_industrial_stairs uses 'position' as base.
-    # If Robot is at 0,0,0, and Walk is along X.
-    # We should place stairs at [2, 0, 0] if we want straight walk.
-    # User said: "in front of stairs".
-    # I will put Stairs at [3, 0, 0] and robot walks X.
-    
-    # Re-Create Stairs at better pos
-    # Actually I can't delete easily, so I'll just rely on the implementation above which I wrote as [2,2,0].
-    # So I will make the robot start at [0, 2, 0] or make stairs [3, 0, 0]?
-    # Let's fix stairs pos in the function call above.
-    
-    # Let's re-run scene add with correct pos
-    # Actually I can just change the call above.
-    # Updated call: position=[3.0, 0.0, 0.0] (Straight ahead on X)
-    
-    climber = ProceduralClimber(start_pos=[0.5, 0.0, 0.78], stair_start=[3.0, 0.0, 0.0], stair_params=(S_D, S_H, S_NUM))
+    # Climber
+    # Start at 0, 0, 0.78 (Hip height)
+    climber = ProceduralClimber(start_pos=[0.0, 0.0, 0.78], stair_start=[3.0, 0.0, 0.0], stair_params=(S_D, S_H, S_NUM))
     
     world.reset()
     
-    # Hard Physics
-    print("Setting stiff physics...")
-    # Attempt to just use Kinematic overrides primarily
+    # Hard Physics / Kinematic override
+    # We will force positions in the loop
     
-    frame_idx = 0
     while kit.is_running():
         world.step(render=True)
         
-        # 1. Update CSV Viz (Independent)
-        if frame_idx < len(player.data):
-            res = player.get_frame_keypoints(frame_idx)
-            skeleton_viz.update(res[0])
-            frame_idx += 1
-        else: frame_idx = 0
-        
-        # 2. Update Procedural Robot
+        # Update Procedural Robot
         root_pos, joints = climber.update(0.016) # Assume 60hz dt
         
         g1_robot.set_world_pose(position=root_pos, orientation=np.array([1,0,0,0]))
@@ -304,8 +187,4 @@ def main():
     kit.close()
 
 if __name__ == "__main__":
-    # Monkey patch the function call in main to fix position
-    # Actually I wrote main() above, I'll just fix it in the file write
-    # I will fix the function call line in the string content.
-    sys.modules[__name__].create_industrial_stairs = create_industrial_stairs
     main()
