@@ -52,7 +52,7 @@ class G1StairsEnvCfg(G1LocomotionEnvCfg):
         self.scene.terrain = TerrainImporterCfg(
             prim_path="/World/ground",
             terrain_type="usd",
-            usd_path="c:/Users/basti/source/repos/mobile-robotics-ws/g1_project/assets/stairs_env.usd",
+            usd_path=r"c:/Users/basti/source/repos/mobile-robotics-ws/g1_project/assets/stairs_env.usd",
         )
         
         # Adjust Episode Length (Climbing takes time)
