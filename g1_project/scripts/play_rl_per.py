@@ -1,51 +1,47 @@
 
-# train_rl_per.py
-# This script is a modified version of train_rl.py that uses Prioritized Experience Replay (PER).
+# play_rl_per.py
+# Visualization script for PER trained policy
 
 import argparse
 import sys
 import os
 import torch
 import traceback
+import signal
 
 # Add source path
 script_dir = os.path.dirname(os.path.abspath(__file__))
 source_dir = os.path.abspath(os.path.join(script_dir, "../source"))
 sys.path.append(source_dir)
 
-# Add IsaacLab path (Parent of isaaclab package)
+# Add IsaacLab path
 isaac_lab_path = r"C:\Users\basti\source\repos\IsaacLab\source"
 core_path = os.path.join(isaac_lab_path, "isaaclab")
 if core_path not in sys.path:
     sys.path.append(core_path)
-    print(f"[INFO] Appended {core_path} to sys.path")
 
 ext_path = os.path.join(isaac_lab_path, "extensions")
 if ext_path not in sys.path:
     sys.path.append(ext_path)
-    print(f"[INFO] Appended {ext_path} to sys.path")
 
 # Add Local rsl_rl repo (Fix for import error)
 rsl_rl_path = os.path.join(source_dir, "rsl_rl_repo")
 if rsl_rl_path not in sys.path:
     sys.path.insert(0, rsl_rl_path)
-    print(f"[INFO] Inserted {rsl_rl_path} to sys.path")
 
-# Launch Isaac Sim
+# Launch Isaac Sim (Headless=False for visual)
 from isaacsim import SimulationApp
-config = {"headless": True}
+config = {"headless": False} # VISUALIZATION MODE
 simulation_app = SimulationApp(config)
 
 # Imports after Sim Start
 try:
     import gymnasium as gym
-    print("[INFO] Imported gymnasium")
     from isaaclab.envs import ManagerBasedRLEnv
     from g1_locomotion.g1_stairs_env_cfg import G1StairsEnvCfg
-    from tensordict import TensorDict # Import TensorDict
+    from tensordict import TensorDict
     
     # Import PER Components
-    # Ensure current script dir is in path
     if script_dir not in sys.path:
         sys.path.append(script_dir)
     from per_components import PrioritizedRunner
@@ -96,7 +92,9 @@ class RslRlVecEnvWrapper:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num_envs", type=int, default=100)
+    parser.add_argument("--num_envs", type=int, default=5) # Low num envs for visual
+    parser.add_argument("--load_run", type=str, required=True, help="Name of run folder (e.g. v1_per)")
+    parser.add_argument("--checkpoint", type=str, default="model_350.pt")
     args = parser.parse_args()
 
     # Config
@@ -108,71 +106,58 @@ def main():
     env = gym.make("Isaac-Locomotion-G1-v0", cfg=env_cfg)
     
     # Wrap
-    print("[INFO] Wrapping environment with local RslRlVecEnvWrapper...")
     vec_env = RslRlVecEnvWrapper(env)
 
-    print("[INFO] Setting up Prioritized PPO Runner...")
-    
-    # RSL-RL Config
+    # RSL-RL Config (Dummy, mostly for structure)
     ppo_config = {
         "seed": 42,
-        "obs_groups": {"actor": ["policy"], "critic": ["policy"]}, # Valid obs_groups for Dict obs
+        "obs_groups": {"actor": ["policy"], "critic": ["policy"]},
         "num_steps_per_env": 24,
-        "max_iterations": 1000,
+        "max_iterations": 500,
         "save_interval": 50,
         "experiment_name": "g1_stairs_per",
-        "run_name": "v2_per_long",
-        "resume": False,
-        "load_run": -1,
-        "checkpoint": -1,
+        "run_name": args.load_run, # Load from this run
+        "resume": True,
+        "load_run": args.load_run,
+        "checkpoint": -1, # We load manually often, or use runner logic
         "resume_path": None,
-        
-        "algorithm": {
-            "class_name": "PPO", # OnPolicyRunner expects this here
-            "clip_param": 0.2,
-            "desired_kl": 0.01,
-            "entropy_coef": 0.01,
-            "gamma": 0.99,
-            "lam": 0.95,
-            "learning_rate": 0.001,
-            "max_grad_norm": 1.0,
-            "num_learning_epochs": 5,
-            "num_mini_batches": 4,
-            "schedule": "adaptive",
-            "use_clipped_value_loss": True,
-            "value_loss_coef": 1.0,
-        },
-        "policy": {
-            "class_name": "ActorCritic", # OnPolicyRunner expects this here
-            "init_noise_std": 1.0,
-            "actor_hidden_dims": [128, 64, 32],
-            "critic_hidden_dims": [128, 64, 32],
-            "activation": "elu", 
-        }
+        "algorithm": { "class_name": "PPO", "value_loss_coef": 1.0, "use_clipped_value_loss": True, "clip_param": 0.2, "entropy_coef": 0.01, "num_learning_epochs": 5, "num_mini_batches": 4, "learning_rate": 1e-3, "schedule": "adaptive", "gamma": 0.99, "lam": 0.95, "desired_kl": 0.01, "max_grad_norm": 1.0 },
+        "policy": { "class_name": "ActorCritic", "init_noise_std": 1.0, "actor_hidden_dims": [128, 64, 32], "critic_hidden_dims": [128, 64, 32], "activation": "elu" }
     }
     
     log_dir = os.path.abspath(os.path.join(script_dir, "logs_per"))
-    print(f"[INFO] Logging to: {log_dir}")
     
-    # Reset Environment once to initialize it
-    vec_env.reset() # Fix for ResetNeeded error
+    # Reset Environment
+    vec_env.reset()
 
     # Use PrioritizedRunner
     runner = PrioritizedRunner(vec_env, ppo_config, log_dir=log_dir, device=env_cfg.sim.device)
     
-    print("[INFO] Starting Training with PER...")
-    runner.learn(num_learning_iterations=ppo_config["max_iterations"], init_at_random_ep_len=True)
+    # Load model
+    # runner.load(resume_path) # Need to construct path
+    resume_path = os.path.join(log_dir, "g1_stairs_per", args.load_run, "nn", args.checkpoint)
+    print(f"[INFO] Loading model from: {resume_path}")
+    runner.load(resume_path)
     
-    print("[INFO] Training Finished.")
+    policy = runner.alg.actor_critic
+    policy.eval()
+    
+    print("[INFO] Starting Playback...")
+    
+    obs, _ = vec_env.reset()
+    
+    # Play loop
+    while simulation_app.is_running():
+        with torch.no_grad():
+            # Get Action
+            # obs is TensorDict
+            actions = policy.act_inference(obs)
+            
+            # Step
+            obs, rew, dones, extras = vec_env.step(actions)
+            
+    print("[INFO] Playback Finished.")
     simulation_app.close()
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        import traceback
-        with open("error_log.txt", "w", encoding="utf-8") as f:
-            f.write(traceback.format_exc())
-        print(f"[FATAL ERROR] Main Crashed: {e}")
-        traceback.print_exc()
-        sys.exit(1)
+    main()
