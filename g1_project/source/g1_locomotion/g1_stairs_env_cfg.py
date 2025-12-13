@@ -13,9 +13,14 @@ from .g1_env_cfg import G1LocomotionEnvCfg
 def hand_rail_distance(env, asset_cfg: SceneEntityCfg, rail_start=(3.0, 0.45, 0.9), rail_end=(6.75, 0.45, 3.15), sigma=0.5):
     # Extract hand positions
     # asset_cfg should point to left_hand or right_hand link
-    body_idx = env.scene.rigid_bodies[asset_cfg.name].find_bodies(asset_cfg.body_names)[0]
-    # body_pos shape: (num_envs, num_bodies, 3) -> (num_envs, 1, 3)
-    pos = env.scene.rigid_bodies[asset_cfg.name].data.root_pos_w[:, body_idx, :3]
+    # asset_cfg should point to left_hand or right_hand link
+    # env.scene[asset_cfg.name] gives the Articulation (or RigidObject)
+    asset = env.scene[asset_cfg.name]
+    body_idx = asset.find_bodies(asset_cfg.body_names)[0] # Get indices
+    # body_pos_w shape: (num_envs, num_bodies, 3). We take the first matched body.
+    # Note: body_idx is likely a list or tensor of indices.
+    target_idx = body_idx[0] 
+    pos = asset.data.body_pos_w[:, target_idx, :3]
     
     # Line Segment Math
     # P = Start, Q = End. AB = Q-P.

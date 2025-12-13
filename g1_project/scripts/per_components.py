@@ -1,5 +1,6 @@
 
 import torch
+import torch.nn as nn
 import numpy as np
 import os
 import sys
@@ -130,6 +131,9 @@ class PrioritizedRolloutStorage(RolloutStorage):
         # Flatten advantages to match tree structure
         advantages_flat = self.advantages.flatten(0, 1).cpu().numpy()
         priorities = np.abs(advantages_flat) + 1e-5
+        # Handle NaNs and Infs
+        priorities = np.nan_to_num(priorities, nan=1e-5, posinf=1e5, neginf=1e-5)
+        priorities = np.clip(priorities, 1e-5, 1e5) # Clamp to avoid overflow
         
         # Re-build tree (brute force for now, efficient enough for <10k items)
         # Ideally we would update incrementally but this is a batch buffer reset.
@@ -179,11 +183,19 @@ class PrioritizedRolloutStorage(RolloutStorage):
                 priorities = []
                 
                 segment = self.tree.total_priority / mini_batch_size
+                # DEBUG: Check for overflow
+                if epoch == 0 and i == 0:
+                    print(f"[DEBUG] Total Priority: {self.tree.total_priority}, Segment: {segment}")
                 
                 for k in range(mini_batch_size):
                     a = segment * k
                     b = segment * (k + 1)
-                    s = np.random.uniform(a, b)
+                    # Handle potential overflow if bad state
+                    try:
+                        s = np.random.uniform(a, b)
+                    except OverflowError:
+                        print(f"[ERROR] Overflow in uniform({a}, {b}). Total Priority: {self.tree.total_priority}")
+                        s = a # Fallback
                     (tree_idx, p, data_idx) = self.tree.get_leaf(s)
                     
                     # data_idx from SumTree logic corresponds to absolute index if filled linearly
@@ -237,12 +249,7 @@ class PrioritizedPPO(PPO):
     """
     PPO variant that uses PrioritizedRolloutStorage.
     """
-    def init_storage(self, training_type, num_envs, num_transitions_per_env, obs, actions_shape):
-        # Instantiate Prioritized Storage
-        self.storage = PrioritizedRolloutStorage(
-            training_type, num_envs, num_transitions_per_env, obs, actions_shape, self.device
-        )
-        
+
     def update(self):
         # Copy of PPO.update but unpacking extra items and applying weights
         mean_value_loss = 0
@@ -383,19 +390,20 @@ class PrioritizedRunner(OnPolicyRunner):
             obs, self.cfg["obs_groups"], self.env.num_actions, **self.policy_cfg
         ).to(self.device)
 
+        # Initialize the storage
+        storage = PrioritizedRolloutStorage(
+            "rl",
+            self.env.num_envs,
+            self.cfg["num_steps_per_env"],
+            obs,
+            [self.env.num_actions],
+            self.device
+        )
+
         # Initialize the algorithm -> FORCE PrioritizedPPO
         # alg_class = eval(self.alg_cfg.pop("class_name")) 
         self.alg_cfg.pop("class_name", None) # Remove if present
         
-        alg = PrioritizedPPO(actor_critic, device=self.device, **self.alg_cfg, multi_gpu_cfg=self.multi_gpu_cfg)
-
-        # Initialize the storage
-        alg.init_storage(
-            "rl",
-            self.env.num_envs,
-            self.num_steps_per_env,
-            obs,
-            [self.env.num_actions],
-        )
+        alg = PrioritizedPPO(actor_critic, storage, device=self.device, **self.alg_cfg, multi_gpu_cfg=self.multi_gpu_cfg)
 
         return alg

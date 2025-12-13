@@ -42,6 +42,7 @@ try:
     print("[INFO] Imported gymnasium")
     from isaaclab.envs import ManagerBasedRLEnv
     from g1_locomotion.g1_stairs_env_cfg import G1StairsEnvCfg
+    from tensordict import TensorDict # Import TensorDict
     
     # Import PER Components
     # Ensure current script dir is in path
@@ -59,6 +60,7 @@ class RslRlVecEnvWrapper:
     """Wrapper to make IsaacLab Gym Env compatible with RSL-RL."""
     def __init__(self, env):
         self.env = env
+        self.cfg = env.unwrapped.cfg # Expose config for Logger
         self.num_envs = env.unwrapped.num_envs
         # Check action/obs spaces
         if hasattr(self.env.unwrapped, "num_actions"):
@@ -79,15 +81,18 @@ class RslRlVecEnvWrapper:
         dones = terminated | truncated
         # Returns: obs, privileged_obs, rewards, dones, infos
         policy_obs = obs_dict["policy"]
-        return policy_obs, None, rew, dones, extras
+        return TensorDict({"policy": policy_obs}, batch_size=[self.num_envs]), rew, dones, extras
 
     def get_observations(self):
         # Recompute observations
-        return self.env.unwrapped.observation_manager.compute()["policy"]
+        return TensorDict({"policy": self.env.unwrapped.observation_manager.compute()["policy"]}, batch_size=[self.num_envs])
         
     def reset(self):
         obs_dict, _ = self.env.reset()
-        return obs_dict["policy"], None
+        return TensorDict({"policy": obs_dict["policy"]}, batch_size=[self.num_envs]), None
+
+    def __getattr__(self, name):
+        return getattr(self.env.unwrapped, name)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -111,10 +116,10 @@ def main():
     # RSL-RL Config
     ppo_config = {
         "seed": 42,
-        "obs_groups": {}, # Fix for KeyError in OnPolicyRunner
+        "obs_groups": {"actor": ["policy"], "critic": ["policy"]}, # Valid obs_groups for Dict obs
         "num_steps_per_env": 24,
-        "max_iterations": 100,
-        "save_interval": 25,
+        "max_iterations": 500,
+        "save_interval": 50,
         "experiment_name": "g1_stairs_per",
         "run_name": "v1_per",
         "resume": False,
@@ -149,6 +154,9 @@ def main():
     log_dir = os.path.abspath(os.path.join(script_dir, "logs_per"))
     print(f"[INFO] Logging to: {log_dir}")
     
+    # Reset Environment once to initialize it
+    vec_env.reset() # Fix for ResetNeeded error
+
     # Use PrioritizedRunner
     runner = PrioritizedRunner(vec_env, ppo_config, log_dir=log_dir, device=env_cfg.sim.device)
     
