@@ -305,7 +305,7 @@ class PrioritizedPPO(PPO):
                 value_loss = value_losses
                 
             value_loss = (value_loss * weights_batch.unsqueeze(1)).mean() # Weighted
-
+            
             loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
 
             # ... (RND/Symmetry loss would be added here)
@@ -344,8 +344,58 @@ class PrioritizedPPO(PPO):
             "entropy": mean_entropy,
         }
 
+class PrioritizedRunner(OnPolicyRunner):
+    """
+    OnPolicyRunner that uses PrioritizedPPO.
+    """
+    def _construct_algorithm(self, obs):
+        """Construct the actor-critic algorithm."""
+        # Resolve RND config
+        self.alg_cfg = resolve_rnd_config(self.alg_cfg, obs, self.cfg["obs_groups"], self.env)
 
+        # Resolve symmetry config
+        self.alg_cfg = resolve_symmetry_config(self.alg_cfg, self.env)
 
+        # Resolve deprecated normalization config
+        if self.cfg.get("empirical_normalization") is not None:
+             # Just copy logic or ignore warning for now
+             if self.policy_cfg.get("actor_obs_normalization") is None:
+                self.policy_cfg["actor_obs_normalization"] = self.cfg["empirical_normalization"]
+             if self.policy_cfg.get("critic_obs_normalization") is None:
+                self.policy_cfg["critic_obs_normalization"] = self.cfg["empirical_normalization"]
 
+        # Initialize the policy
+        # We need to eval class_name but look in correct modules
+        # Or just use ActorCritic/ActorCriticRecurrent classes directly if we know them
+        # train_rl.py uses "ActorCritic" usually.
+        class_name = self.policy_cfg.pop("class_name")
+        if class_name == "ActorCritic":
+            actor_critic_class = ActorCritic
+        elif class_name == "ActorCriticRecurrent":
+            actor_critic_class = ActorCriticRecurrent
+        else:
+            # Fallback to eval (might fail if not in scope)
+            # Try to import from rsl_rl.modules
+            # For now assume ActorCritic
+            actor_critic_class = ActorCritic
 
+        actor_critic = actor_critic_class(
+            obs, self.cfg["obs_groups"], self.env.num_actions, **self.policy_cfg
+        ).to(self.device)
 
+        # Initialize the algorithm -> FORCE PrioritizedPPO
+        # alg_class = eval(self.alg_cfg.pop("class_name")) 
+        self.alg_cfg.pop("class_name", None) # Remove if present
+        
+        alg = PrioritizedPPO(actor_critic, device=self.device, **self.alg_cfg, multi_gpu_cfg=self.multi_gpu_cfg)
+
+        # Initialize the storage
+        alg.init_storage(
+            "rl",
+            self.env.num_envs,
+            self.num_steps_per_env,
+            obs,
+            [self.env.num_actions],
+        )
+
+        return alg
