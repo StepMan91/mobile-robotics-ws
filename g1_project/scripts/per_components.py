@@ -120,13 +120,23 @@ class PrioritizedRolloutStorage(RolloutStorage):
         priorities: new priorities (abs TC error)
         """
         for idx, p in zip(indices, priorities):
-            self.tree.update(idx, p ** self.alpha)
-            self.min_priority = min(self.min_priority, p ** self.alpha)
+            p_val = float(p)
+            if np.isnan(p_val) or np.isinf(p_val) or p_val <= 0:
+                p_val = 1e-5
+            p_val = np.clip(p_val, 1e-5, 1e5)
+            self.tree.update(idx, p_val ** self.alpha)
+            self.min_priority = min(self.min_priority, p_val ** self.alpha)
             
     def compute_returns(self, last_values, gamma, lam, normalize_advantage=True):
         # Call super to compute returns and advantages
         super().compute_returns(last_values, gamma, lam, normalize_advantage)
         
+        # Sanitize storage buffers to prevent NaN propagation to policy
+        self.advantages = torch.nan_to_num(self.advantages, nan=0.0, posinf=1.0, neginf=-1.0)
+        self.advantages = torch.clamp(self.advantages, -1e5, 1e5)
+        self.returns = torch.nan_to_num(self.returns, nan=0.0, posinf=1.0, neginf=-1.0)
+        self.returns = torch.clamp(self.returns, -1e5, 1e5)
+
         # Initialize priorities based on Advantages (which mimic TD error)
         # Flatten advantages to match tree structure
         advantages_flat = self.advantages.flatten(0, 1).cpu().numpy()
@@ -162,8 +172,8 @@ class PrioritizedRolloutStorage(RolloutStorage):
         mini_batch_size = batch_size // num_mini_batches
         
         # Beta scheduling
-        # self.beta = min(1.0, self.beta_start + self.frame * (1.0 - self.beta_start) / self.beta_frames)
-        # self.frame += 1 # Update frame count? Handled by runner?
+        self.beta = min(1.0, self.beta_start + self.frame * (1.0 - self.beta_start) / self.beta_frames)
+        self.frame += 1 # Update frame count
         
         # Flattened data
         observations = self.observations.flatten(0, 1)
@@ -210,9 +220,11 @@ class PrioritizedRolloutStorage(RolloutStorage):
                 
                 # Importance Sampling Weights
                 # w = (N * P)^-beta / max_w
-                probabilities = np.array(priorities) / self.tree.total_priority
+                probabilities = np.array(priorities) / (self.tree.total_priority + 1e-6) # Add epsilon to avoid divide by zero
                 weights = (self.capacity * probabilities) ** (-self.beta)
-                weights = weights / weights.max()
+                # Sanitize weights
+                weights = np.nan_to_num(weights, nan=1.0, posinf=1.0, neginf=1.0)
+                weights = weights / (weights.max() + 1e-6) # Normalize
                 weights = torch.tensor(weights, dtype=torch.float32, device=self.device)
                 
                 # Fetch Data
@@ -331,6 +343,9 @@ class PrioritizedPPO(PPO):
                 # Here we can use the absolute advantage or value error.
                 # Let's use value error |V_target - V_pred|
                 new_td_errors = torch.abs(returns_batch - new_values).cpu().numpy().flatten()
+                # Sanitize new_td_errors
+                new_td_errors = np.nan_to_num(new_td_errors, nan=1e-5, posinf=1e5, neginf=1e-5)
+                new_td_errors = np.clip(new_td_errors, 1e-5, 1e5)
                 
             self.storage.update_priorities(tree_indices, new_td_errors)
             

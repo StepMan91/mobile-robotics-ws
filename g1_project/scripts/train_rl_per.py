@@ -161,7 +161,7 @@ def main():
     runner = PrioritizedRunner(vec_env, ppo_config, log_dir=log_dir, device=env_cfg.sim.device)
     
     print("[INFO] Starting Training with PER...")
-    runner.learn(num_learning_iterations=100, init_at_random_ep_len=True)
+    runner.learn(num_learning_iterations=ppo_config["max_iterations"], init_at_random_ep_len=True)
     
     print("[INFO] Training Finished.")
     simulation_app.close()
