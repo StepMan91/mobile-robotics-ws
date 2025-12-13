@@ -28,8 +28,8 @@ if ext_path not in sys.path:
 # Add Local rsl_rl repo (Fix for import error)
 rsl_rl_path = os.path.join(source_dir, "rsl_rl_repo")
 if rsl_rl_path not in sys.path:
-    sys.path.append(rsl_rl_path)
-    print(f"[INFO] Appended {rsl_rl_path} to sys.path")
+    sys.path.insert(0, rsl_rl_path)
+    print(f"[INFO] Inserted {rsl_rl_path} to sys.path")
 
 # Launch Isaac Sim
 from isaacsim import SimulationApp
@@ -111,20 +111,19 @@ def main():
     # RSL-RL Config
     ppo_config = {
         "seed": 42,
-        "runner": {
-            "policy_class_name": "ActorCritic",
-            "algorithm_class_name": "PPO", # Will be ignored by PrioritizedRunner
-            "num_steps_per_env": 24,
-            "max_iterations": 100, 
-            "save_interval": 25,
-            "experiment_name": "g1_stairs_per", # New experiment name
-            "run_name": "v1_per",
-            "resume": False,
-            "load_run": -1,
-            "checkpoint": -1,
-            "resume_path": None,
-        },
+        "obs_groups": {}, # Fix for KeyError in OnPolicyRunner
+        "num_steps_per_env": 24,
+        "max_iterations": 100,
+        "save_interval": 25,
+        "experiment_name": "g1_stairs_per",
+        "run_name": "v1_per",
+        "resume": False,
+        "load_run": -1,
+        "checkpoint": -1,
+        "resume_path": None,
+        
         "algorithm": {
+            "class_name": "PPO", # OnPolicyRunner expects this here
             "clip_param": 0.2,
             "desired_kl": 0.01,
             "entropy_coef": 0.01,
@@ -139,12 +138,11 @@ def main():
             "value_loss_coef": 1.0,
         },
         "policy": {
+            "class_name": "ActorCritic", # OnPolicyRunner expects this here
             "init_noise_std": 1.0,
             "actor_hidden_dims": [128, 64, 32],
             "critic_hidden_dims": [128, 64, 32],
             "activation": "elu", 
-            # "class_name" is popped by runner
-            "class_name": "ActorCritic"
         }
     }
     

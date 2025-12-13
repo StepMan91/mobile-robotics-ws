@@ -21,5 +21,5 @@ Write-Host "ISAAC_SIM_PATH: $ENV:ISAAC_SIM_PATH"
 Write-Host "PYTHONPATH: $ENV:PYTHONPATH"
 Write-Host "--------------------------------------------------"
 
-# 6. Run the script using Base Python
-python C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\train_rl_per.py --num_envs 50
+# 5. Run the script using Base Python
+python C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\train_rl_per.py $args --num_envs 50

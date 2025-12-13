@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\train_rl_per.py", line 163, in <module>
+    main()
+  File "C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\train_rl_per.py", line 153, in main
+    runner = PrioritizedRunner(vec_env, ppo_config, log_dir=log_dir, device=env_cfg.sim.device)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\source\rsl_rl_repo\rsl_rl\runners\on_policy_runner.py", line 43, in __init__
+    self.cfg["obs_groups"] = resolve_obs_groups(obs, self.cfg["obs_groups"], self._get_default_obs_sets())
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\source\rsl_rl_repo\rsl_rl\utils\utils.py", line 224, in resolve_obs_groups
+    if "policy" not in obs_groups:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: argument of type 'NoneType' is not iterable
