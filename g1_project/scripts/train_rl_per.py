@@ -1,8 +1,12 @@
 
+# train_rl_per.py
+# This script is a modified version of train_rl.py that uses Prioritized Experience Replay (PER).
+
 import argparse
 import sys
 import os
 import torch
+import traceback
 
 # Add source path
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -11,7 +15,6 @@ sys.path.append(source_dir)
 
 # Add IsaacLab path (Parent of isaaclab package)
 isaac_lab_path = r"C:\Users\basti\source\repos\IsaacLab\source"
-# As per train_g1.py:
 core_path = os.path.join(isaac_lab_path, "isaaclab")
 if core_path not in sys.path:
     sys.path.append(core_path)
@@ -34,28 +37,24 @@ config = {"headless": True}
 simulation_app = SimulationApp(config)
 
 # Imports after Sim Start
-# Imports after Sim Start
-import traceback
 try:
     import gymnasium as gym
     print("[INFO] Imported gymnasium")
     from isaaclab.envs import ManagerBasedRLEnv
-    print("[INFO] Imported ManagerBasedRLEnv")
-    # Wrapper to make IsaacLab Env compatible with RSL-RL
-    # from isaaclab.envs import DirectMARLEnv, DirectRLEnv # Check wrappers
-    # Usually we wrap the gym env.
-    from rsl_rl.runners import OnPolicyRunner
-    print("[INFO] Imported OnPolicyRunner")
-
-    # Import Config
-    import g1_locomotion
     from g1_locomotion.g1_stairs_env_cfg import G1StairsEnvCfg
-    print("[INFO] Imported G1StairsEnvCfg")
+    
+    # Import PER Components
+    # Ensure current script dir is in path
+    if script_dir not in sys.path:
+        sys.path.append(script_dir)
+    from per_components import PrioritizedRunner
+    
 except Exception as e:
     print(f"[ERROR] Import failed: {e}")
     traceback.print_exc()
     sys.exit(1)
 
+# Wrapper (Reused from train_rl.py)
 class RslRlVecEnvWrapper:
     """Wrapper to make IsaacLab Gym Env compatible with RSL-RL."""
     def __init__(self, env):
@@ -70,8 +69,6 @@ class RslRlVecEnvWrapper:
         if hasattr(self.env.unwrapped, "num_observations"):
             self.num_obs = self.env.unwrapped.num_observations
         else:
-            # Try to get from observation space
-            # obs space is Dict.
             self.num_obs = self.env.unwrapped.observation_space['policy'].shape[1]
             
         self.num_privileged_obs = None 
@@ -86,7 +83,6 @@ class RslRlVecEnvWrapper:
 
     def get_observations(self):
         # Recompute observations
-        # This accesses the internal manager
         return self.env.unwrapped.observation_manager.compute()["policy"]
         
     def reset(self):
@@ -104,42 +100,25 @@ def main():
     env_cfg.sim.device = "cuda:0" # Force GPU
     
     # Create Env
-    # Note: ManagerBasedRLEnv expects env_cfg
     env = gym.make("Isaac-Locomotion-G1-v0", cfg=env_cfg)
     
     # Wrap
     print("[INFO] Wrapping environment with local RslRlVecEnvWrapper...")
     vec_env = RslRlVecEnvWrapper(env)
 
-    print("[INFO] Setting up PPO Runner...")
-    
-    # DEBUG: Print Stage Paths
-    from omni.isaac.core.utils.stage import get_current_stage
-    stage = get_current_stage()
-    if stage:
-        print("[DEBUG] Stage Traversal (/World/ground):")
-        ground = stage.GetPrimAtPath("/World/ground")
-        if ground.IsValid():
-            for p in ground.GetChildren():
-                print(f"  {p.GetPath()}")
-                for child in p.GetChildren():
-                    print(f"    {child.GetPath()}")
-                    for grand in child.GetChildren():
-                        print(f"      {grand.GetPath()}") # Depth 3
-        else:
-            print("[DEBUG] /World/ground not found!")
+    print("[INFO] Setting up Prioritized PPO Runner...")
     
     # RSL-RL Config
     ppo_config = {
         "seed": 42,
         "runner": {
             "policy_class_name": "ActorCritic",
-            "algorithm_class_name": "PPO",
+            "algorithm_class_name": "PPO", # Will be ignored by PrioritizedRunner
             "num_steps_per_env": 24,
-            "max_iterations": 100, # Short run for verification
+            "max_iterations": 100, 
             "save_interval": 25,
-            "experiment_name": "g1_stairs",
-            "run_name": "v1",
+            "experiment_name": "g1_stairs_per", # New experiment name
+            "run_name": "v1_per",
             "resume": False,
             "load_run": -1,
             "checkpoint": -1,
@@ -161,18 +140,21 @@ def main():
         },
         "policy": {
             "init_noise_std": 1.0,
-            "actor_hidden_dims": [128, 64, 32], # Smaller net for speed
+            "actor_hidden_dims": [128, 64, 32],
             "critic_hidden_dims": [128, 64, 32],
             "activation": "elu", 
+            # "class_name" is popped by runner
+            "class_name": "ActorCritic"
         }
     }
     
-    log_dir = os.path.abspath(os.path.join(script_dir, "logs"))
+    log_dir = os.path.abspath(os.path.join(script_dir, "logs_per"))
     print(f"[INFO] Logging to: {log_dir}")
     
-    runner = OnPolicyRunner(vec_env, ppo_config, log_dir=log_dir, device=env_cfg.sim.device)
+    # Use PrioritizedRunner
+    runner = PrioritizedRunner(vec_env, ppo_config, log_dir=log_dir, device=env_cfg.sim.device)
     
-    print("[INFO] Starting Training...")
+    print("[INFO] Starting Training with PER...")
     runner.learn(num_learning_iterations=100, init_at_random_ep_len=True)
     
     print("[INFO] Training Finished.")
@@ -182,6 +164,9 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
+        import traceback
+        with open("error_log.txt", "w", encoding="utf-8") as f:
+            f.write(traceback.format_exc())
         print(f"[FATAL ERROR] Main Crashed: {e}")
         traceback.print_exc()
         sys.exit(1)

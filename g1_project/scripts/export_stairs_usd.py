@@ -45,7 +45,7 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, st
         xform_api = UsdGeom.XformCommonAPI(prim)
         # Note: SetTranslate, SetScale, SetRotate
         xform_api.SetTranslate(Gf.Vec3d(x, y, z))
-        xform_api.SetScale(Gf.Vec3d(step_depth, 1.0, step_height))
+        xform_api.SetScale(Gf.Vec3f(step_depth, 1.0, step_height))
         
         # Collision
         UsdPhysics.CollisionAPI.Apply(prim)
@@ -69,7 +69,7 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, st
     
     xform_api = UsdGeom.XformCommonAPI(prim)
     xform_api.SetTranslate(Gf.Vec3d(plat_center_x, position[1], last_z))
-    xform_api.SetScale(Gf.Vec3d(plat_depth, 1.0, step_height))
+    xform_api.SetScale(Gf.Vec3f(plat_depth, 1.0, step_height))
     
     UsdPhysics.CollisionAPI.Apply(prim)
     omni.kit.commands.execute('BindMaterial', prim_path=plat_path, material_path=mat_path)
@@ -94,7 +94,7 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=0.15, st
     prim = stage.GetPrimAtPath(rail_path)
     xform_api = UsdGeom.XformCommonAPI(prim)
     xform_api.SetTranslate(Gf.Vec3d(cx, cy, cz))
-    xform_api.SetScale(Gf.Vec3d(0.04, 0.04, length))
+    xform_api.SetScale(Gf.Vec3f(0.04, 0.04, length))
     
     # Rotate: Cylinder is usually Z-Axis aligned.
     # We want to pitch it up around Y axis.
@@ -134,6 +134,15 @@ def create_scene():
     omni.usd.get_context().save_as_stage(save_path)
     print("Done.")
 
+import traceback
+
 if __name__ == "__main__":
-    create_scene()
-    simulation_app.close()
+    try:
+        print("[INFO] Starting Export...")
+        create_scene()
+        print("[INFO] Export Finished Successfully.")
+    except Exception:
+        print("[FATAL] Export Failed:")
+        traceback.print_exc()
+    finally:
+        simulation_app.close()

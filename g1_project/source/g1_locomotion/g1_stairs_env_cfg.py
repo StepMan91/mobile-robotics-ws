@@ -84,10 +84,16 @@ class G1StairsEnvCfg(G1LocomotionEnvCfg):
         
         # Penalize Falling more
         self.rewards.lin_vel_z_l2.weight = 0.0 # Don't penalize vertical movement (we want climb)
-        self.rewards.base_stability.params["minimum_height"] = 0.3 # Allow some crouching but not falling
+        self.terminations.base_stability.params["minimum_height"] = 0.3 # Allow some crouching but not falling
         
         # Increase generic forward velocity reward (Climb Up)
         self.rewards.track_lin_vel_xy_exp.weight = 1.0
         
-        # Add specific "Climb Z" progress reward?
-        # base_lin_vel Z > 0?
+        # DEBUG: Disable Height Scanner to find paths
+        # self.scene.height_scanner.mesh_prim_paths = ["/World/ground/World/Stairs/.*", "/World/ground/World/defaultGroundPlane"]
+        del self.scene.height_scanner
+        del self.observations.policy.height_scan
+        
+        # Add RayCaster for visual debug?
+        # self.scene.height_scanner.debug_vis = True
+
