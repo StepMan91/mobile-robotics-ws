@@ -128,10 +128,8 @@ def create_scene():
     world.scene.add_default_ground_plane()
     
     # Stairs
-    # Use position from previous request? play_rl_per_999 says robot starts at 0,0,0
-    # In old export, stairs were at [3.0, 0.0, 0.0].
-    # Let's keep that to match "moving forward" logic.
-    create_industrial_stairs(world, position=[3.0, 0.0, 0.0])
+    # Use position from Pantin/visualize_csv_isaac.py: [2.0, 2.0, 0.0]
+    create_industrial_stairs(world, position=[2.0, 2.0, 0.0])
     
     # Save
     import os

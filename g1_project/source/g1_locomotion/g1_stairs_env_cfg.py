@@ -59,28 +59,24 @@ class G1StairsEnvCfg(G1LocomotionEnvCfg):
         self.episode_length_s = 40.0
         
         # Init State (Randomize X start)
-        self.scene.robot.init_state.pos = (0.5, 0.0, 0.8) # Closer to stairs
-        # Add noise to init pos? Handled by reset events usually.
+        # Stairs started at [2.0, 2.0, 0.0]. We want to be in front (-X).
+        # X=1.0 is 1m in front of first step. Y=2.0 is centered.
+        self.scene.robot.init_state.pos = (1.0, 2.0, 0.8) 
         
         # Add Hand Rail Reward
         # Track LEFT Hand (assuming left rail)
-        # Note: In climb_stairs.py, rail was at Y=0.45. Robot at Y=0.0.
-        # Left Hand is at Y ~ +0.3.
-        # So we track left_wrist/hand.
+        # Rail is at Y=2.0 + WIDTH/2 = 2.5 (Left side if facing +X?)
+        # Or Y=2.0 - WIDTH/2 = 1.5.
+        # G1 in T-Pose: Left is +Y.
+        # We target Y=2.5 line.
         
         self.rewards.hand_rail_tracking = RewTerm(
             func=hand_rail_distance,
             weight=2.0,
             params={
-                "asset_cfg": SceneEntityCfg("robot", body_names=".*_wrist_roll_link"), # Use one hand
-                # "asset_cfg": SceneEntityCfg("robot", body_names="left_wrist_roll_link"), 
-                # Regex might pick both? We want ONE hand.
-                # Let's target LEFT specifically if rail is on left.
-                # Rail Y=0.45. Robot Y=0. 
-                # Left is +Y usually (Left Hand Rule? or Right?).
-                # G1: Left is +Y in standard T-pose? 
-                # Let's assume Left.
-                # Regex: "left_wrist_roll_link"
+                "asset_cfg": SceneEntityCfg("robot", body_names=".*_wrist_roll_link"), 
+                "rail_start": (2.0, 2.5, 0.9 + 0.15), # Approx start of rail (World Coords)
+                "rail_end": (2.0 + 3.75, 2.5, 3.15), # Run ~3.75m
             },
         )
         
@@ -93,6 +89,14 @@ class G1StairsEnvCfg(G1LocomotionEnvCfg):
         
         # Increase generic forward velocity reward (Climb Up)
         self.rewards.track_lin_vel_xy_exp.weight = 1.0
+        
+        # STRICT JOINT LIMITS (User request)
+        # Prevent splits by penalizing limits heavily
+        self.rewards.dof_pos_limits = RewTerm(func=mdp.rewards.joint_pos_limits, weight=-10.0)
+
+        # Custom Penalty for Hip Abduction (Splits)
+        # We can use joint_pos_limits but maybe stricter limits for hip_roll?
+        # For now, rely on dof_pos_limits with high weight.
         
         # DEBUG: Disable Height Scanner to find paths
         # self.scene.height_scanner.mesh_prim_paths = ["/World/ground/World/Stairs/.*", "/World/ground/World/defaultGroundPlane"]
