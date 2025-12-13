@@ -69,3 +69,4 @@ tests/
 
 # Docker history
 .isaac-lab-docker-history
+/g1_project/source/rsl_rl_repo
