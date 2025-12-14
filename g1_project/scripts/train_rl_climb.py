@@ -56,20 +56,36 @@ class RslRlVecEnvWrapper:
         self.num_privileged_obs = None 
         self.device = env.unwrapped.device
         
+    def _sanitize(self, tensor, name="Observation"):
+        if torch.isnan(tensor).any() or torch.isinf(tensor).any():
+            # print(f"[WARNING] {name} contains NaN/Inf! replacing with zeros.", flush=True)
+            return torch.nan_to_num(tensor, nan=0.0, posinf=0.0, neginf=0.0)
+        return tensor
+
     def step(self, actions):
+        # Sanitize actions before sending to env
+        actions = self._sanitize(actions, "Actions")
+        
         obs_dict, rew, terminated, truncated, extras = self.env.step(actions)
         dones = terminated | truncated
         # Returns: obs, privileged_obs, rewards, dones, infos
         policy_obs = obs_dict["policy"]
+        
+        # Sanitize outputs
+        policy_obs = self._sanitize(policy_obs, "PolicyObs")
+        rew = self._sanitize(rew, "Rewards")
+        
         return TensorDict({"policy": policy_obs}, batch_size=[self.num_envs]), rew, dones, extras
 
     def get_observations(self):
         # Recompute observations
-        return TensorDict({"policy": self.env.unwrapped.observation_manager.compute()["policy"]}, batch_size=[self.num_envs])
+        obs = self.env.unwrapped.observation_manager.compute()["policy"]
+        return TensorDict({"policy": self._sanitize(obs, "GetObs")}, batch_size=[self.num_envs])
         
     def reset(self):
         obs_dict, _ = self.env.reset()
-        return TensorDict({"policy": obs_dict["policy"]}, batch_size=[self.num_envs]), None
+        obs = obs_dict["policy"]
+        return TensorDict({"policy": self._sanitize(obs, "ResetObs")}, batch_size=[self.num_envs]), None
 
     def __getattr__(self, name):
         return getattr(self.env.unwrapped, name)
@@ -117,8 +133,8 @@ def main():
         "obs_groups": {"actor": ["policy"], "critic": ["policy"]},
         "num_steps_per_env": 24,
         # "max_iterations": 100, # VERIFICATION: 100 EPOCHS
-        "max_iterations": 6000, # USER REQUEST: 6000 EPOCHS
-        "save_interval": 100,
+        "max_iterations": 1000, # USER REQUEST: 1000 EPOCHS
+        "save_interval": 50, # USER REQUEST: 50
         "experiment_name": "climb_per_rev2", # NEW EXPERIMENT FOR OVERHAUL
         "run_name": "run_001",
         "resume": False,
@@ -131,7 +147,7 @@ def main():
             "entropy_coef": 0.01,
             "num_learning_epochs": 5,
             "num_mini_batches": 4, # 4096 / 4 = 1024 batch size
-            "learning_rate": 1.0e-3, # RESET LR
+            "learning_rate": 3.0e-4, # REDUCED LR FOR STABILITY (Rev2)
             "schedule": "adaptive",
             "gamma": 0.99,
             "lam": 0.95,
@@ -141,6 +157,7 @@ def main():
         "policy": {
              "class_name": "ActorCritic", # Required by OnPolicyRunner
              "init_noise_std": 1.0,
+             "noise_std_type": "log", # [FIX] Force positive std via log parameterization
              "actor_hidden_dims": [128, 64, 32],
              "critic_hidden_dims": [128, 64, 32],
              "activation": "elu",
@@ -156,7 +173,7 @@ def main():
     )
     print("[DEBUG] Runner created. Starting Learning...", flush=True)
     
-    # MANUAL RESUME (Disabled for Rev2)
+    # MANUAL RESUME (Disabled for Rev2 fresh start)
     # resume_path = os.path.join(log_dir, "model_500.pt")
     # if os.path.exists(resume_path):
     #      print(f"[INFO] Resuming training from: {resume_path}", flush=True)

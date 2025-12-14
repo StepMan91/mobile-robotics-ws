@@ -307,6 +307,11 @@ class PrioritizedPPO(PPO):
             # I'll stick to core PPO logic for brevity, but referencing standard logic.
             
             # Recompute policy
+            # check for NaN in obs_batch
+            if torch.isnan(obs_batch).any():
+                # print("[WARNING] PER Update: obs_batch contains partial NaN! Sanitizing.", flush=True)
+                obs_batch = torch.nan_to_num(obs_batch, nan=0.0)
+                
             self.policy.act(obs_batch, masks=masks_batch, hidden_state=hidden_states_batch[0])
             actions_log_prob_batch = self.policy.get_actions_log_prob(actions_batch)
             value_batch = self.policy.evaluate(obs_batch, masks=masks_batch, hidden_state=hidden_states_batch[1])

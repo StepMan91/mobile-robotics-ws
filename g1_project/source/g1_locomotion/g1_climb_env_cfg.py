@@ -210,8 +210,23 @@ class RewardsCfg:
 
 @configclass
 class CommandsCfg:
-    # No commands, just Climb Task
-    null_command = mdp.NullCommandCfg()
+    """Command specifications for the environment."""
+    # Force Forward Velocity for Climbing Task
+    base_velocity = mdp.UniformVelocityCommandCfg(
+        asset_name="robot",
+        resampling_time_range=(10.0, 10.0),
+        rel_standing_envs=0.02,
+        rel_heading_envs=1.0,
+        heading_command=False, # Disable random heading, we want to go straight
+        heading_control_stiffness=0.5,
+        debug_vis=False,
+        ranges=mdp.UniformVelocityCommandCfg.Ranges(
+            lin_vel_x=(0.5, 1.0), # ALWAYS FORWARD
+            lin_vel_y=(-0.1, 0.1), # Minimal drift
+            ang_vel_z=(-0.1, 0.1), # Minimal turning
+            heading=(-0.1, 0.1)
+        ),
+    )
 
 @configclass
 class EventCfg:
@@ -233,7 +248,7 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot"),
-            "pose_range": {"x": (0.5, 1.5), "y": (-0.2, 0.2), "yaw": (-0.1, 0.1)}, # Face forward (+X)
+            "pose_range": {"x": (0.5, 1.5), "y": (-0.2, 0.2), "yaw": (-0.05, 0.05)}, # STRICTLY FACING STAIRS
             "velocity_range": {},
         },
     )
