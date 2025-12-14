@@ -119,11 +119,11 @@ def main():
         # "max_iterations": 100, # VERIFICATION: 100 EPOCHS
         "max_iterations": 6000, # USER REQUEST: 6000 EPOCHS
         "save_interval": 100,
-        "experiment_name": "climb_per",
+        "experiment_name": "climb_per_rev2", # NEW EXPERIMENT FOR OVERHAUL
         "run_name": "run_001",
-        "resume": True,
+        "resume": False,
         "load_run": -1,
-        "checkpoint": "model_500.pt",
+        "checkpoint": -1,
         "algorithm": {
             "value_loss_coef": 1.0,
             "use_clipped_value_loss": True,
@@ -131,7 +131,7 @@ def main():
             "entropy_coef": 0.01,
             "num_learning_epochs": 5,
             "num_mini_batches": 4, # 4096 / 4 = 1024 batch size
-            "learning_rate": 3.0e-4, # REDUCED LR FOR STABILITY
+            "learning_rate": 1.0e-3, # RESET LR
             "schedule": "adaptive",
             "gamma": 0.99,
             "lam": 0.95,
@@ -156,11 +156,11 @@ def main():
     )
     print("[DEBUG] Runner created. Starting Learning...", flush=True)
     
-    # MANUAL RESUME
-    resume_path = os.path.join(log_dir, "model_500.pt")
-    if os.path.exists(resume_path):
-         print(f"[INFO] Resuming training from: {resume_path}", flush=True)
-         runner.load(resume_path)
+    # MANUAL RESUME (Disabled for Rev2)
+    # resume_path = os.path.join(log_dir, "model_500.pt")
+    # if os.path.exists(resume_path):
+    #      print(f"[INFO] Resuming training from: {resume_path}", flush=True)
+    #      runner.load(resume_path)
     
     runner.learn(num_learning_iterations=train_cfg["max_iterations"], init_at_random_ep_len=True)
     print("[DEBUG] Learning finished.", flush=True)

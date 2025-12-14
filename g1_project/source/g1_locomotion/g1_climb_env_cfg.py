@@ -77,6 +77,53 @@ def climb_progress_reward(env, command_name: str):
     # Reward both
     return vel_x + vel_z * 2.0 # Emphasize Upward
 
+def feet_air_time(env, sensor_cfg: SceneEntityCfg, command_name: str, threshold: float):
+    """Reward for feet being in the air (steps)."""
+    sensor = env.scene[sensor_cfg.name]
+    # air_time is [NumEnvs, NumBodies]
+    air_time = sensor.data.current_air_time[:, sensor_cfg.body_ids]
+    # Reward air time up to a threshold (step duration)
+    return torch.sum(torch.clamp(air_time, max=threshold), dim=1)
+
+def feet_slide(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg):
+    """Penalize horizontal velocity when feet are in contact."""
+    # Contact: Force > 1.0
+    contacts = env.scene[sensor_cfg.name].data.net_forces_w_history[:, 0, sensor_cfg.body_ids].norm(dim=-1) > 1.0
+    
+    # Feet Vel XY
+    body_vel = env.scene[asset_cfg.name].data.body_lin_vel_w[:, asset_cfg.body_ids, :2]
+    vel_norm = torch.norm(body_vel, dim=-1)
+    
+    # Penalize velocity where contact exists
+    return torch.sum(vel_norm * contacts.float(), dim=1)
+
+def look_at_stairs(env, asset_cfg: SceneEntityCfg):
+    """Reward head facing the stairs (+X)."""
+    # Head forward vector
+    # Project Local X of head to World
+    # Need head body index.
+    # Assuming body_ids[0] is head/torso?
+    # Better: Use Root Quaternion if head isn't tracked separately?
+    # Or use asset_cfg to pick "head_link" if available.
+    # Let's use Root for now as "General Gaze".
+    root_quat = env.scene[asset_cfg.name].data.root_quat_w
+    
+    # Forward vector from quat:
+    # 2(xy + wz), 1 - 2(y^2 + z^2), ... 
+    # forward X = 1 - 2(y^2 + z^2)
+    # forward Y = 2(xy + wz)
+    
+    # We want Forward X to be 1.0 (looking at stairs at X+)
+    # We want Flat (Z=0) ?
+    
+    # Use built-in math utils or simplify.
+    # q = (w, x, y, z)
+    w, x, y, z = root_quat[:, 0], root_quat[:, 1], root_quat[:, 2], root_quat[:, 3]
+    
+    forward_x = 1 - 2 * (y**2 + z**2)
+    
+    return torch.clamp(forward_x, min=0.0)
+
 # ----------------------
 
 @configclass
@@ -89,6 +136,13 @@ class ObservationsCfg:
         base_ang_vel = ObsTerm(func=mdp.base_ang_vel, noise=Unoise(n_min=-0.2, n_max=0.2))
         projected_gravity = ObsTerm(func=mdp.projected_gravity, noise=Unoise(n_min=-0.05, n_max=0.05))
         actions = ObsTerm(func=mdp.last_action)
+        
+        # [NEW] PERCEPTION
+        height_scan = ObsTerm(
+            func=mdp.height_scan,
+            params={"sensor_cfg": SceneEntityCfg("height_scanner")},
+            clip=(-1.0, 1.0),
+        )
 
     policy: PolicyCfg = PolicyCfg()
 
@@ -99,18 +153,11 @@ class ActionsCfg:
 @configclass
 class RewardsCfg:
     # -- Task --
-    # Handrail (Left hand, Left Rail)
-    # Stairs at X=3.0. Lights/Path start -2.0 to 3.0.
-    # Rail starts at X=3.0, Y= +/- Width/2.
-    # Width=1.0. Left Rail at +0.5?
-    # Pantin code: Y off +/- 0.5.
-    # Left is +Y in G1? Let's target +0.5 Left Rail.
-    # Height: Rail is 0.9m above step. Step 0 Z=0.15. Start Z ~ 1.05.
     hand_rail = RewTerm(
         func=hand_rail_distance,
         weight=2.0,
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*_wrist_roll_link"), # Left Hand (Regex might need tune)
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_wrist_roll_link"), 
             "rail_start": (3.0, 0.5, 1.05),
             "rail_end": (3.0 + 3.75, 0.5, 3.3), 
         }
@@ -119,20 +166,46 @@ class RewardsCfg:
     climb_progress = RewTerm(
         func=climb_progress_reward,
         weight=1.5,
-        params={"command_name": "base_velocity"} # Hack to fit sig
+        params={"command_name": "base_velocity"}
+    )
+    
+    # [NEW] GAIT REWARDS
+    feet_air_time = RewTerm(
+        func=feet_air_time,
+        weight=1.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names="left_ankle_roll_link|right_ankle_roll_link"),
+            "command_name": "base_velocity",
+            "threshold": 0.5,
+        }
+    )
+    
+    feet_slide = RewTerm(
+        func=feet_slide,
+        weight=-1.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names="left_ankle_roll_link|right_ankle_roll_link"),
+            "asset_cfg": SceneEntityCfg("robot", body_names="left_ankle_roll_link|right_ankle_roll_link"),
+        }
+    )
+    
+    look_at_stairs = RewTerm(
+        func=look_at_stairs,
+        weight=0.5,
+        params={"asset_cfg": SceneEntityCfg("robot")}
     )
     
     stability = RewTerm(
         func=torso_upright_reward,
-        weight=1.0,
+        weight=2.0, # Increased for staying upright
         params={"asset_cfg": SceneEntityCfg("robot")}
     )
     
     # -- Penalties --
     dof_torques_l2 = RewTerm(func=mdp.rewards.joint_torques_l2, weight=-1.0e-5)
-    action_rate_l2 = RewTerm(func=mdp.rewards.action_rate_l2, weight=-0.01)
+    action_rate_l2 = RewTerm(func=mdp.rewards.action_rate_l2, weight=-0.05) # Increased to suppress jitter
     
-    # STRICT JOINT LIMITS (User request: No Splits)
+    # STRICT JOINT LIMITS
     dof_pos_limits = RewTerm(func=mdp.rewards.joint_pos_limits, weight=-10.0)
 
 @configclass
@@ -221,13 +294,14 @@ class G1ClimbEnvCfg(ManagerBasedRLEnvCfg):
                 ),
             ),
             init_state=ArticulationCfg.InitialStateCfg(
-                pos=(1.0, 0.0, 0.8),
+                pos=(1.0, 0.0, 0.78), # Slightly Lower to ensure ground contact
                 rot=(1.0, 0.0, 0.0, 0.0),
             ),
             actuators={
                 "legs": ImplicitActuatorCfg(
                     joint_names_expr=[".*_hip_.*", ".*_knee_.*", ".*_ankle_.*"],
-                    stiffness=150.0, damping=5.0,
+                    stiffness=200.0, # Increased for support
+                    damping=5.0,
                 ),
                 "arms": ImplicitActuatorCfg(
                     joint_names_expr=[".*_shoulder_.*", ".*_elbow_.*", ".*_wrist_.*"],
@@ -240,9 +314,22 @@ class G1ClimbEnvCfg(ManagerBasedRLEnvCfg):
             },
         )
 
-        # LOAD CUSTOM WORLD
         self.scene.terrain = TerrainImporterCfg(
             prim_path="/World/ClimbEnv",
             terrain_type="usd",
             usd_path="c:/Users/basti/source/repos/mobile-robotics-ws/g1_project/assets/climb_world.usd",
+        )
+
+        # SENSORS (Added for Perception and Gait Rewards)
+        self.scene.height_scanner = RayCasterCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/torso_link",
+            offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
+            attach_yaw_only=True,
+            pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
+            debug_vis=False,
+            mesh_prim_paths=["/World/ClimbEnv"], # Scan the custom terrain
+        )
+        self.scene.contact_forces = ContactSensorCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True,
+            debug_vis=False,
         )
