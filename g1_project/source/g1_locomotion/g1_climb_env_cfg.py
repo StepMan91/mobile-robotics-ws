@@ -329,86 +329,84 @@ class EventCfg:
 
 from isaaclab.managers import TerminationTermCfg as TermTerm
 
-    @configclass
-    class TerminationsCfg:
-        time_out = TermTerm(func=mdp.time_out, params={})
-        # Hard Constraints (User Request)
-        # illegal_tilt = TermTerm(func=illegal_tilt, params={"limit": 0.26}) # 15 deg [FIXME: Function defined above]
-        # We need to register the function or pass it directly.
-        
-        check_tilt = TermTerm(func=illegal_tilt, params={"limit": 0.26}) # > 15 deg -> Die
-        
-        # feet_limit = TermTerm(
-        #     func=feet_too_high, 
-        #     params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_.*"), "limit": 0.4}
-        # )
-        
-        check_fly = TermTerm(
-             func=no_ground_contact,
-             params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_.*")},
-             time_out=0.2, # Allow 0.2s of air time (jump/run), then die.
-        )
-        
-        # Keep base stability as low bounds
-        base_low = TermTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.35})
+@configclass
+class TerminationsCfg:
+    time_out = TermTerm(func=mdp.time_out, params={})
+    # Hard Constraints (User Request)
+    
+    check_tilt = TermTerm(func=illegal_tilt, params={"limit": 0.26}) # > 15 deg -> Die
+    
+    # feet_limit = TermTerm(
+    #     func=feet_too_high, 
+    #     params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_.*"), "limit": 0.4}
+    # )
+    
+    check_fly = TermTerm(
+            func=no_ground_contact,
+            params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_.*")},
+            time_out=0.2, # Allow 0.2s of air time (jump/run), then die.
+    )
+    
+    # Keep base stability as low bounds
+    base_low = TermTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.35})
 
-    @configclass
-    class G1ClimbEnvCfg(ManagerBasedRLEnvCfg):
-        """Configuration for the G1 Climbing environment."""
-        scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5)
+@configclass
+class G1ClimbEnvCfg(ManagerBasedRLEnvCfg):
+    """Configuration for the G1 Climbing environment."""
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5)
+    
+    episode_length_s = 20.0
+    decimation = 4
+    
+    observations: ObservationsCfg = ObservationsCfg()
+    actions: ActionsCfg = ActionsCfg()
+    events: EventCfg = EventCfg()
+    rewards: RewardsCfg = RewardsCfg()
+    terminations: TerminationsCfg = TerminationsCfg()
+    commands: CommandsCfg = CommandsCfg()
+    
+    def __post_init__(self):
+        super().__post_init__()
         
-        episode_length_s = 20.0
-        decimation = 4
+        self.sim.dt = 0.005 
+        self.sim.render_interval = 4
         
-        observations: ObservationsCfg = ObservationsCfg()
-        actions: ActionsCfg = ActionsCfg()
-        events: EventCfg = EventCfg()
-        rewards: RewardsCfg = RewardsCfg()
-        terminations: TerminationsCfg = TerminationsCfg()
-        commands: CommandsCfg = CommandsCfg()
-        
-        def __post_init__(self):
-            super().__post_init__()
-            
-            self.sim.dt = 0.005 
-            self.sim.render_interval = 4
-            
-            self.scene.robot = ArticulationCfg(
-                prim_path="{ENV_REGEX_NS}/Robot",
-                spawn=sim_utils.UsdFileCfg(
-                    # Use absolute path to G1 USD
-                    usd_path="c:/Users/basti/source/repos/mobile-robotics-ws/assets/g1_29dof_rev_1_0/g1_29dof_rev_1_0.usd",
-                    activate_contact_sensors=True,
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                        disable_gravity=False,
-                        max_depenetration_velocity=1.0,
-                    ),
-                    articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                        enabled_self_collisions=False, # Stability
-                        solver_position_iteration_count=4,
-                        solver_velocity_iteration_count=0,
-                    ),
+        self.scene.robot = ArticulationCfg(
+            prim_path="{ENV_REGEX_NS}/Robot",
+            spawn=sim_utils.UsdFileCfg(
+                # Use absolute path to G1 USD
+                usd_path="c:/Users/basti/source/repos/mobile-robotics-ws/assets/g1_29dof_rev_1_0/g1_29dof_rev_1_0.usd",
+                activate_contact_sensors=True,
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                    disable_gravity=False,
+                    max_depenetration_velocity=1.0,
                 ),
-                init_state=ArticulationCfg.InitialStateCfg(
-                    pos=(1.0, 0.0, 0.78), 
-                    rot=(1.0, 0.0, 0.0, 0.0),
+                articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                    enabled_self_collisions=False, # Stability
+                    solver_position_iteration_count=4,
+                    solver_velocity_iteration_count=0,
                 ),
-                actuators={
-                    "legs": ImplicitActuatorCfg(
-                        joint_names_expr=[".*_hip_.*", ".*_knee_.*", ".*_ankle_.*"],
-                        stiffness=800.0, # HARD STIFFNESS (User Request)
-                        damping=20.0, # Increased damping to match stiffness
-                    ),
-                    "arms": ImplicitActuatorCfg(
-                        joint_names_expr=[".*_shoulder_.*", ".*_elbow_.*", ".*_wrist_.*"],
-                        stiffness=200.0, damping=5.0,
-                    ),
-                    "torso": ImplicitActuatorCfg(
-                        joint_names_expr=["waist_.*"],
-                        stiffness=800.0, damping=20.0, # HARD TORSO
-                    ),
-                },
-            )
+            ),
+            init_state=ArticulationCfg.InitialStateCfg(
+                pos=(1.0, 0.0, 0.78), 
+                rot=(1.0, 0.0, 0.0, 0.0),
+            ),
+            actuators={
+                "legs": ImplicitActuatorCfg(
+                    joint_names_expr=[".*_hip_.*", ".*_knee_.*", ".*_ankle_.*"],
+                    stiffness=800.0, # HARD STIFFNESS (User Request)
+                    damping=20.0, # Increased damping to match stiffness
+                ),
+                "arms": ImplicitActuatorCfg(
+                    joint_names_expr=[".*_shoulder_.*", ".*_elbow_.*", ".*_wrist_.*"],
+                    stiffness=200.0, damping=5.0,
+                ),
+                "torso": ImplicitActuatorCfg(
+                    joint_names_expr=["waist_.*"],
+                    stiffness=800.0, damping=20.0, # HARD TORSO
+                ),
+            },
+        )
 
         self.scene.terrain = TerrainImporterCfg(
             prim_path="/World/ClimbEnv",

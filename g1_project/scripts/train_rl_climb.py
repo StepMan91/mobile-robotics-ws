@@ -133,8 +133,8 @@ def main():
         "obs_groups": {"actor": ["policy"], "critic": ["policy"]},
         "num_steps_per_env": 24,
         # "max_iterations": 100, # VERIFICATION: 100 EPOCHS
-        "max_iterations": 100, # USER REQUEST: 100 EPOCHS ONLY
-        "save_interval": 10, # Frequent saves for short run
+        "max_iterations": 10, # USER REQUEST: 10 EPOCHS (Supervised Check)
+        "save_interval": 10, # Save at end
         "experiment_name": "climb_per_rev3", # REV3 HARD CONSTRAINTS
         "run_name": "run_001",
         "resume": False,
@@ -173,11 +173,9 @@ def main():
     )
     print("[DEBUG] Runner created. Starting Learning...", flush=True)
     
-    # MANUAL RESUME (Disabled)
-    # resume_path = os.path.join(log_dir, "model_500.pt")
-    # if os.path.exists(resume_path):
-    #      print(f"[INFO] Resuming training from: {resume_path}", flush=True)
-    #      runner.load(resume_path)
+        if os.path.exists(resume_path):
+             print(f"[INFO] Resuming training from: {resume_path}", flush=True)
+             runner.load(resume_path) # load handles logic
     
     runner.learn(num_learning_iterations=train_cfg["max_iterations"], init_at_random_ep_len=True)
     print("[DEBUG] Learning finished.", flush=True)
