@@ -101,27 +101,12 @@ def main():
     print("[DEBUG] Environment created and wrapped.", flush=True)
     
     # 2. Config for PPO/PER
-    # Manually defining strict config for massive training
-    alg_cfg = {
-        "value_loss_coef": 1.0,
-        "use_clipped_value_loss": True,
-        "clip_param": 0.2,
-        "entropy_coef": 0.01,
-        "num_learning_epochs": 5,
-        "num_mini_batches": 4, # 4096 / 4 = 1024 batch size
-        "learning_rate": 1.0e-3,
-        "schedule": "adaptive",
-        "gamma": 0.99,
-        "lam": 0.95,
-        "desired_kl": 0.01,
-        "max_grad_norm": 1.0,
-    }
     
-    # PER Components (Already in per_components.py)
-    # Runner handles the storage and wrapping
-    
-    log_dir = os.path.join(os.getcwd(), "g1_project", "scripts", "logs_per_climb")
-    
+    # Create Log Dir (REV3 - 7000 EPOCHS)
+    log_dir = os.path.join(script_dir, "logs_per_climb_rev3_7k")
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+        
     # Reset Environment to ensure observations are valid
     print("[DEBUG] Resetting environment...", flush=True)
     env.reset()
@@ -133,11 +118,11 @@ def main():
         "obs_groups": {"actor": ["policy"], "critic": ["policy"]},
         "num_steps_per_env": 24,
         # "max_iterations": 100, # VERIFICATION: 100 EPOCHS
-        "max_iterations": 10, # USER REQUEST: 10 EPOCHS (Supervised Check)
-        "save_interval": 10, # Save at end
-        "experiment_name": "climb_per_rev3", # REV3 HARD CONSTRAINTS
+        "max_iterations": 7000, # USER REQUEST: 7000 EPOCHS (Production Run)
+        "save_interval": 200, # Reasonable interval for long run
+        "experiment_name": "climb_per_rev3_7k", # 7k Epochs
         "run_name": "run_001",
-        "resume": False,
+        "resume": False, 
         "load_run": -1,
         "checkpoint": -1,
         "algorithm": {
@@ -173,9 +158,7 @@ def main():
     )
     print("[DEBUG] Runner created. Starting Learning...", flush=True)
     
-        if os.path.exists(resume_path):
-             print(f"[INFO] Resuming training from: {resume_path}", flush=True)
-             runner.load(resume_path) # load handles logic
+    # MANUAL RESUME (Removed for cleaner file)
     
     runner.learn(num_learning_iterations=train_cfg["max_iterations"], init_at_random_ep_len=True)
     print("[DEBUG] Learning finished.", flush=True)
