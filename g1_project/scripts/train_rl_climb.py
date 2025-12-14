@@ -116,15 +116,28 @@ def main():
         "seed": 42,
         "obs_groups": {"actor": ["policy"], "critic": ["policy"]},
         "num_steps_per_env": 24,
-        "max_iterations": 100, # VERIFICATION: 100 EPOCHS
-        # "max_iterations": 5000, # USER REQUEST: 5000 EPOCHS
-        "save_interval": 50,
+        # "max_iterations": 100, # VERIFICATION: 100 EPOCHS
+        "max_iterations": 6000, # USER REQUEST: 6000 EPOCHS
+        "save_interval": 100,
         "experiment_name": "climb_per",
         "run_name": "run_001",
-        "resume": False,
+        "resume": True,
         "load_run": -1,
-        "checkpoint": -1,
-        "algorithm": alg_cfg,
+        "checkpoint": "model_500.pt",
+        "algorithm": {
+            "value_loss_coef": 1.0,
+            "use_clipped_value_loss": True,
+            "clip_param": 0.2,
+            "entropy_coef": 0.01,
+            "num_learning_epochs": 5,
+            "num_mini_batches": 4, # 4096 / 4 = 1024 batch size
+            "learning_rate": 3.0e-4, # REDUCED LR FOR STABILITY
+            "schedule": "adaptive",
+            "gamma": 0.99,
+            "lam": 0.95,
+            "desired_kl": 0.01,
+            "max_grad_norm": 1.0,
+        },
         "policy": {
              "class_name": "ActorCritic", # Required by OnPolicyRunner
              "init_noise_std": 1.0,
@@ -142,6 +155,12 @@ def main():
         device="cuda:0"
     )
     print("[DEBUG] Runner created. Starting Learning...", flush=True)
+    
+    # MANUAL RESUME
+    resume_path = os.path.join(log_dir, "model_500.pt")
+    if os.path.exists(resume_path):
+         print(f"[INFO] Resuming training from: {resume_path}", flush=True)
+         runner.load(resume_path)
     
     runner.learn(num_learning_iterations=train_cfg["max_iterations"], init_at_random_ep_len=True)
     print("[DEBUG] Learning finished.", flush=True)

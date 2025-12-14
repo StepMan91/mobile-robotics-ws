@@ -220,7 +220,17 @@ class PrioritizedRolloutStorage(RolloutStorage):
                 
                 # Importance Sampling Weights
                 # w = (N * P)^-beta / max_w
-                probabilities = np.array(priorities) / (self.tree.total_priority + 1e-6) # Add epsilon to avoid divide by zero
+                
+                # Check for zero total priority
+                current_total_priority = self.tree.total_priority
+                if current_total_priority <= 1e-6:
+                     current_total_priority = 1e-6
+                
+                probabilities = np.array(priorities) / current_total_priority
+                
+                # Clamp probabilities to avoid 0 ** -beta (Divide by Zero)
+                probabilities = np.clip(probabilities, 1e-10, 1.0)
+                
                 weights = (self.capacity * probabilities) ** (-self.beta)
                 # Sanitize weights
                 weights = np.nan_to_num(weights, nan=1.0, posinf=1.0, neginf=1.0)
