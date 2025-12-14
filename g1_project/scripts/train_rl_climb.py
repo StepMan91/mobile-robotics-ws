@@ -133,9 +133,9 @@ def main():
         "obs_groups": {"actor": ["policy"], "critic": ["policy"]},
         "num_steps_per_env": 24,
         # "max_iterations": 100, # VERIFICATION: 100 EPOCHS
-        "max_iterations": 1000, # USER REQUEST: 1000 EPOCHS
-        "save_interval": 50, # USER REQUEST: 50
-        "experiment_name": "climb_per_rev2", # NEW EXPERIMENT FOR OVERHAUL
+        "max_iterations": 100, # USER REQUEST: 100 EPOCHS ONLY
+        "save_interval": 10, # Frequent saves for short run
+        "experiment_name": "climb_per_rev3", # REV3 HARD CONSTRAINTS
         "run_name": "run_001",
         "resume": False,
         "load_run": -1,
@@ -147,7 +147,7 @@ def main():
             "entropy_coef": 0.01,
             "num_learning_epochs": 5,
             "num_mini_batches": 4, # 4096 / 4 = 1024 batch size
-            "learning_rate": 3.0e-4, # REDUCED LR FOR STABILITY (Rev2)
+            "learning_rate": 3.0e-4, # Stable LR
             "schedule": "adaptive",
             "gamma": 0.99,
             "lam": 0.95,
@@ -157,7 +157,7 @@ def main():
         "policy": {
              "class_name": "ActorCritic", # Required by OnPolicyRunner
              "init_noise_std": 1.0,
-             "noise_std_type": "log", # [FIX] Force positive std via log parameterization
+             "noise_std_type": "log", # Keep Log Std for stability
              "actor_hidden_dims": [128, 64, 32],
              "critic_hidden_dims": [128, 64, 32],
              "activation": "elu",
@@ -173,7 +173,7 @@ def main():
     )
     print("[DEBUG] Runner created. Starting Learning...", flush=True)
     
-    # MANUAL RESUME (Disabled for Rev2 fresh start)
+    # MANUAL RESUME (Disabled)
     # resume_path = os.path.join(log_dir, "model_500.pt")
     # if os.path.exists(resume_path):
     #      print(f"[INFO] Resuming training from: {resume_path}", flush=True)

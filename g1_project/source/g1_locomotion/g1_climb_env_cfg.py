@@ -124,6 +124,70 @@ def look_at_stairs(env, asset_cfg: SceneEntityCfg):
     
     return torch.clamp(forward_x, min=0.0)
 
+    # Reward both
+    return vel_x + vel_z * 2.0 # Emphasize Upward
+
+# --- STRICT TERMINATIONS (USER REQUEST) ---
+def illegal_tilt(env, limit: float = 0.26): # 15 degrees
+    """Terminate if robot tilts more than limit."""
+    root_rot = env.scene["robot"].data.root_quat_w
+    # Convert to Roll/Pitch?
+    # Simple check: Z-axis project.
+    # If Z-axis has Z-component < cos(limit), it's tilted.
+    # z_axis_z = 1 - 2(x^2 + y^2) 
+    # if limit=15deg, cos(15) ~ 0.965.
+    # 0.965 = 1 - 2(x^2 + y^2) => 2(x^2+y^2) = 0.035 => x^2+y^2 = 0.0175.
+    
+    # Or just use the Projected Gravity logic.
+    grav_vec = env.scene["robot"].data.projected_gravity_b
+    # Gravity should be (0, 0, -1) in base frame if upright? 
+    # Detailed mapping depends on IMU frame.
+    
+    # Let's use simple quat math.
+    # roll, pitch, yaw = sim_utils.math.quat_to_euler_xyz(root_rot) # Expensive?
+    
+    # Fast approx: projected gravity Z component.
+    # If upright, gravity vector in Base Frame is [0, 0, -1].
+    # If tilted 90 deg, it's [0, -1, 0] or [1, 0, 0].
+    # We want Z component to be < -0.96 (downward).
+    
+    # Note: IsaacLab projected_gravity is usually Gravity Vector directly?
+    # Let's assume projected_gravity_b: (x, y, z).
+    # We want z < -cos(limit).
+    
+    return env.scene["robot"].data.projected_gravity_b[:, 2] > -math.cos(limit)
+
+def feet_too_high(env, sensor_cfg: SceneEntityCfg, limit: float):
+    """Terminate if feet go too high relative to base."""
+    # We actually want relative to GROUND (or generic height).
+    # sensor data pos_w is world pos.
+    feet_pos = env.scene[sensor_cfg.name].data.body_pos_w[:, sensor_cfg.body_ids, 2] # Z only
+    # Check max height of any foot
+    max_height = torch.max(feet_pos, dim=1).values
+    
+    # But wait, on stairs, feet go up.
+    # We want to prevent "High Kick" relative to hips? 
+    # Or simply "Flying".
+    # User said: "hauteur maximal des pieds doit être de 0.4m". Assuming relative to base or step.
+    # Relative to Base Z might be safer.
+    base_pos = env.scene["robot"].data.root_pos_w[:, 2]
+    # If foot Z > Base Z (impossible) or Foot Z > Base Z - 0.2?
+    
+    # User likely means "Stepping too high".
+    # Let's enforce relative to base height. 
+    # G1 Hip height is ~0.7m. If foot is at Base Z, it's a high kick.
+    # Let's say Foot Z > Base Z - 0.3.
+    
+    return torch.any(feet_pos > (base_pos.unsqueeze(1) - 0.3), dim=1)
+
+def no_ground_contact(env, sensor_cfg: SceneEntityCfg):
+    """Terminate if NO foot is touching the ground (Flying)."""
+    # Force > 1.0 implies contact.
+    forces = env.scene[sensor_cfg.name].data.net_forces_w_history[:, 0, sensor_cfg.body_ids].norm(dim=-1)
+    # Check if ALL feet are < 1.0
+    in_air = torch.all(forces < 1.0, dim=1)
+    return in_air
+
 # ----------------------
 
 @configclass
@@ -265,69 +329,86 @@ class EventCfg:
 
 from isaaclab.managers import TerminationTermCfg as TermTerm
 
-@configclass
-class TerminationsCfg:
-    time_out = TermTerm(func=mdp.time_out, params={})
-    # Fall detection
-    base_stability = TermTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.3})
-
-@configclass
-class G1ClimbEnvCfg(ManagerBasedRLEnvCfg):
-    """Configuration for the G1 Climbing environment."""
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5)
-    
-    episode_length_s = 20.0
-    decimation = 4
-    
-    observations: ObservationsCfg = ObservationsCfg()
-    actions: ActionsCfg = ActionsCfg()
-    events: EventCfg = EventCfg()
-    rewards: RewardsCfg = RewardsCfg()
-    terminations: TerminationsCfg = TerminationsCfg()
-    commands: CommandsCfg = CommandsCfg()
-    
-    def __post_init__(self):
-        super().__post_init__()
+    @configclass
+    class TerminationsCfg:
+        time_out = TermTerm(func=mdp.time_out, params={})
+        # Hard Constraints (User Request)
+        # illegal_tilt = TermTerm(func=illegal_tilt, params={"limit": 0.26}) # 15 deg [FIXME: Function defined above]
+        # We need to register the function or pass it directly.
         
-        self.sim.dt = 0.005 
-        self.sim.render_interval = 4
+        check_tilt = TermTerm(func=illegal_tilt, params={"limit": 0.26}) # > 15 deg -> Die
         
-        self.scene.robot = ArticulationCfg(
-            prim_path="{ENV_REGEX_NS}/Robot",
-            spawn=sim_utils.UsdFileCfg(
-                # Use absolute path to G1 USD
-                usd_path="c:/Users/basti/source/repos/mobile-robotics-ws/assets/g1_29dof_rev_1_0/g1_29dof_rev_1_0.usd",
-                activate_contact_sensors=True,
-                rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                    disable_gravity=False,
-                    max_depenetration_velocity=1.0,
-                ),
-                articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                    enabled_self_collisions=False, # Stability
-                    solver_position_iteration_count=4,
-                    solver_velocity_iteration_count=0,
-                ),
-            ),
-            init_state=ArticulationCfg.InitialStateCfg(
-                pos=(1.0, 0.0, 0.78), # Slightly Lower to ensure ground contact
-                rot=(1.0, 0.0, 0.0, 0.0),
-            ),
-            actuators={
-                "legs": ImplicitActuatorCfg(
-                    joint_names_expr=[".*_hip_.*", ".*_knee_.*", ".*_ankle_.*"],
-                    stiffness=200.0, # Increased for support
-                    damping=5.0,
-                ),
-                "arms": ImplicitActuatorCfg(
-                    joint_names_expr=[".*_shoulder_.*", ".*_elbow_.*", ".*_wrist_.*"],
-                    stiffness=100.0, damping=2.0,
-                ),
-                "torso": ImplicitActuatorCfg(
-                    joint_names_expr=["waist_.*"],
-                    stiffness=200.0, damping=5.0,
-                ),
-            },
+        # feet_limit = TermTerm(
+        #     func=feet_too_high, 
+        #     params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_.*"), "limit": 0.4}
+        # )
+        
+        check_fly = TermTerm(
+             func=no_ground_contact,
+             params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_.*")},
+             time_out=0.2, # Allow 0.2s of air time (jump/run), then die.
         )
+        
+        # Keep base stability as low bounds
+        base_low = TermTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.35})
+
+    @configclass
+    class G1ClimbEnvCfg(ManagerBasedRLEnvCfg):
+        """Configuration for the G1 Climbing environment."""
+        scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5)
+        
+        episode_length_s = 20.0
+        decimation = 4
+        
+        observations: ObservationsCfg = ObservationsCfg()
+        actions: ActionsCfg = ActionsCfg()
+        events: EventCfg = EventCfg()
+        rewards: RewardsCfg = RewardsCfg()
+        terminations: TerminationsCfg = TerminationsCfg()
+        commands: CommandsCfg = CommandsCfg()
+        
+        def __post_init__(self):
+            super().__post_init__()
+            
+            self.sim.dt = 0.005 
+            self.sim.render_interval = 4
+            
+            self.scene.robot = ArticulationCfg(
+                prim_path="{ENV_REGEX_NS}/Robot",
+                spawn=sim_utils.UsdFileCfg(
+                    # Use absolute path to G1 USD
+                    usd_path="c:/Users/basti/source/repos/mobile-robotics-ws/assets/g1_29dof_rev_1_0/g1_29dof_rev_1_0.usd",
+                    activate_contact_sensors=True,
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                        disable_gravity=False,
+                        max_depenetration_velocity=1.0,
+                    ),
+                    articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                        enabled_self_collisions=False, # Stability
+                        solver_position_iteration_count=4,
+                        solver_velocity_iteration_count=0,
+                    ),
+                ),
+                init_state=ArticulationCfg.InitialStateCfg(
+                    pos=(1.0, 0.0, 0.78), 
+                    rot=(1.0, 0.0, 0.0, 0.0),
+                ),
+                actuators={
+                    "legs": ImplicitActuatorCfg(
+                        joint_names_expr=[".*_hip_.*", ".*_knee_.*", ".*_ankle_.*"],
+                        stiffness=800.0, # HARD STIFFNESS (User Request)
+                        damping=20.0, # Increased damping to match stiffness
+                    ),
+                    "arms": ImplicitActuatorCfg(
+                        joint_names_expr=[".*_shoulder_.*", ".*_elbow_.*", ".*_wrist_.*"],
+                        stiffness=200.0, damping=5.0,
+                    ),
+                    "torso": ImplicitActuatorCfg(
+                        joint_names_expr=["waist_.*"],
+                        stiffness=800.0, damping=20.0, # HARD TORSO
+                    ),
+                },
+            )
 
         self.scene.terrain = TerrainImporterCfg(
             prim_path="/World/ClimbEnv",
