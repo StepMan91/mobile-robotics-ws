@@ -1,0 +1,75 @@
+Found 18 event files in C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\logs_per_climb
+
+File: C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\logs_per_climb\events.out.tfevents.1765662705.ZbookBC.11144.0
+  -> 100 entries for tag 'Episode_Reward/hand_rail'
+  -> Step Range: 0 to 99
+  -> Time Range: 2025-12-13 22:52:08 to 2025-12-13 23:19:08
+
+File: events.out.tfevents.1765665682.ZbookBC.35556.0
+  -> No scalars found.
+
+File: C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\logs_per_climb\events.out.tfevents.1765666531.ZbookBC.84540.0
+  -> 1045 entries for tag 'Episode_Reward/hand_rail'
+  -> Step Range: 0 to 1044
+  -> Time Range: 2025-12-13 23:55:50 to 2025-12-14 04:19:26
+
+File: C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\logs_per_climb\events.out.tfevents.1765699554.ZbookBC.87908.0
+  -> 2 entries for tag 'Episode_Reward/hand_rail'
+  -> Step Range: 500 to 501
+  -> Time Range: 2025-12-14 09:06:13 to 2025-12-14 09:06:28
+
+File: events.out.tfevents.1765699673.ZbookBC.85448.0
+  -> No scalars found.
+
+File: C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\logs_per_climb\events.out.tfevents.1765700735.ZbookBC.90152.0
+  -> 251 entries for tag 'Episode_Reward/hand_rail'
+  -> Step Range: 0 to 250
+  -> Time Range: 2025-12-14 09:25:54 to 2025-12-14 10:33:12
+
+File: C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\logs_per_climb\events.out.tfevents.1765707358.ZbookBC.20456.0
+  -> 494 entries for tag 'Episode_Reward/hand_rail'
+  -> Step Range: 0 to 493
+  -> Time Range: 2025-12-14 11:16:18 to 2025-12-14 13:26:31
+
+File: events.out.tfevents.1765715450.ZbookBC.27108.0
+  -> No scalars found.
+
+File: events.out.tfevents.1765715517.ZbookBC.98216.0
+  -> No scalars found.
+
+File: events.out.tfevents.1765716835.ZbookBC.95376.0
+  -> No scalars found.
+
+File: C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\logs_per_climb\events.out.tfevents.1765734083.ZbookBC.101596.0
+  -> 10 entries for tag 'Episode_Reward/hand_rail'
+  -> Step Range: 0 to 9
+  -> Time Range: 2025-12-14 18:41:45 to 2025-12-14 18:44:12
+
+File: C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\logs_per_climb\events.out.tfevents.1765738318.ZbookBC.90984.0
+  -> 9 entries for tag 'Episode_Reward/hand_rail'
+  -> Step Range: 0 to 8
+  -> Time Range: 2025-12-14 19:52:37 to 2025-12-14 19:57:22
+
+File: C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\logs_per_climb\events.out.tfevents.1765738769.ZbookBC.76424.0
+  -> 10 entries for tag 'Episode_Reward/hand_rail'
+  -> Step Range: 0 to 9
+  -> Time Range: 2025-12-14 19:59:49 to 2025-12-14 20:02:13
+
+File: events.out.tfevents.1765812844.ZbookBC.42924.0
+  -> No scalars found.
+
+File: events.out.tfevents.1765814361.ZbookBC.27320.0
+  -> No scalars found.
+
+File: C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\logs_per_climb\old\events.out.tfevents.1765662705.ZbookBC.11144.0
+  -> 100 entries for tag 'Episode_Reward/hand_rail'
+  -> Step Range: 0 to 99
+  -> Time Range: 2025-12-13 22:52:08 to 2025-12-13 23:19:08
+
+File: events.out.tfevents.1765665682.ZbookBC.35556.0
+  -> No scalars found.
+
+File: C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\logs_per_climb\old\events.out.tfevents.1765666531.ZbookBC.84540.0
+  -> 1045 entries for tag 'Episode_Reward/hand_rail'
+  -> Step Range: 0 to 1044
+  -> Time Range: 2025-12-13 23:55:50 to 2025-12-14 04:19:26

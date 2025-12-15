@@ -99,7 +99,7 @@ class G1StairsEnvCfg(G1LocomotionEnvCfg):
         # For now, rely on dof_pos_limits with high weight.
         
         # DEBUG: Disable Height Scanner to find paths
-        # self.scene.height_scanner.mesh_prim_paths = ["/World/ground/World/Stairs/.*", "/World/ground/World/defaultGroundPlane"]
+        # self.scene.height_scanner.mesh_prim_paths = ["/World/ground/World/defaultGroundPlane/Environment/Geometry"]
         del self.scene.height_scanner
         del self.observations.policy.height_scan
         

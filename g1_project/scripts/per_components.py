@@ -271,6 +271,11 @@ class PrioritizedPPO(PPO):
     """
     PPO variant that uses PrioritizedRolloutStorage.
     """
+    def __init__(self, actor_critic, storage, device="cpu", **kwargs):
+        # Initialize PPO with explicit kwargs to avoid positional errors
+        # PPO signature: (policy, num_learning_epochs=5, ...)
+        super().__init__(actor_critic, storage, device=device, **kwargs)
+        # self.storage = storage # Handled by PPO.__init__
 
     def update(self):
         # Copy of PPO.update but unpacking extra items and applying weights
