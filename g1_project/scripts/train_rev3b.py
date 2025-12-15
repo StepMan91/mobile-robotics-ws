@@ -173,10 +173,25 @@ def main():
     # Log Directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
     log_dir = os.path.join(script_dir, "logs_rev3b")
+    if not os.path.exists(log_dir):
+        print(f"[INFO] Creating log directory: {log_dir}")
+        os.makedirs(log_dir, exist_ok=True)
     
+    # Reset Environment (REQUIRED for Init)
+    print("[DEBUG] Resetting Environment...", flush=True)
+    vec_env.reset()
+    print("[DEBUG] Environment Reset.", flush=True)
+
     # Create Runner
     print(f"[INFO] Logging to: {log_dir}")
-    runner = PrioritizedRunner(vec_env, ppo_config, log_dir=log_dir, device=env_cfg.sim.device)
+    try:
+        runner = PrioritizedRunner(vec_env, ppo_config, log_dir=log_dir, device=env_cfg.sim.device)
+        print("[DEBUG] Runner Created.", flush=True)
+    except Exception as e:
+        print(f"[ERROR] Failed to create Runner: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return
 
     # Start Training
     runner.learn(num_learning_iterations=ppo_config["max_iterations"], init_at_random_ep_len=True)

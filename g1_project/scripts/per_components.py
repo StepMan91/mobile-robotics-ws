@@ -12,7 +12,8 @@ try:
     from rsl_rl.runners import OnPolicyRunner
     from rsl_rl.modules import ActorCritic, ActorCriticRecurrent, resolve_rnd_config, resolve_symmetry_config
     from rsl_rl.utils import resolve_obs_groups
-except ImportError:
+except ImportError as e:
+    print(f"[ERROR] Failed to import rsl_rl: {e}", flush=True)
     # If running in environment without rsl_rl, define mocks or fail
     # For now we assume this runs in the correct env
     class RolloutStorage:
