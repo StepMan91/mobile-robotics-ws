@@ -1,9 +1,7 @@
-import argparse
-import sys
 import os
-import torch
+import sys
 
-# Add paths manually (Robustness against Launcher environment issues)
+# Add source path
 script_dir = os.path.dirname(os.path.abspath(__file__))
 source_dir = os.path.abspath(os.path.join(script_dir, "../source"))
 sys.path.append(source_dir)
@@ -14,36 +12,31 @@ core_path = os.path.join(isaac_lab_path, "isaaclab")
 if core_path not in sys.path:
     sys.path.append(core_path)
 
-# Extensions
 ext_path = os.path.join(isaac_lab_path, "extensions")
 if ext_path not in sys.path:
     sys.path.append(ext_path)
 
-# RSL_RL
+# Add Local rsl_rl repo
 rsl_rl_path = os.path.join(source_dir, "rsl_rl_repo")
 if rsl_rl_path not in sys.path:
-    sys.path.append(rsl_rl_path)
+    sys.path.insert(0, rsl_rl_path)
 
-# 1. Parse Args (Standard argparse)
-parser = argparse.ArgumentParser(description="Train G1 Climbing (Riv3b) with RSL-RL.")
-parser.add_argument("--num_envs", type=int, default=4096, help="Number of environments.")
-parser.add_argument("--headless", action="store_true", default=False, help="Run in headless mode.")
-parser.add_argument("--device", type=str, default="cuda:0", help="Device to use.")
-args = parser.parse_args()
-
-# 2. Launch Isaac Sim (Directly)
+# Launch Isaac Sim
 from isaacsim import SimulationApp
-simulation_app = SimulationApp({"headless": args.headless})
+# Headless for training
+simulation_app = SimulationApp({"headless": True})
 
-# 3. Imports after App Launch
+import torch
+import hydra
+from omegaconf import DictConfig
+import argparse
+
 from isaaclab.envs import ManagerBasedRLEnv
-from g1_locomotion.g1_rev3b_env_cfg import G1Rev3bEnvCfg # NEW CONFIG
-# from isaaclab_tasks.utils.wrappers.rsl_rl import RslRlVecEnvWrapper # FAILED
-from rsl_rl.runners import OnPolicyRunner
-from per_components import PrioritizedRunner # Using PER
+from g1_locomotion.g1_rev3b_env_cfg import G1Rev3bEnvCfg # CHANGED: Rev3b Config
+from per_components import PrioritizedRunner, PrioritizedPPO
 from tensordict import TensorDict
 
-# Wrapper (Reused from play_rl_per_999.py / train_rl_climb.py)
+# Wrapper (Reused from train_rl_climb.py)
 class RslRlVecEnvWrapper:
     """Wrapper to make IsaacLab Gym Env compatible with RSL-RL."""
     def __init__(self, env):
@@ -98,60 +91,54 @@ class RslRlVecEnvWrapper:
         return getattr(self.env.unwrapped, name)
 
 def main():
-    print("[DEBUG] ENTERING MAIN", flush=True)
-    # Configure Environment
-    try:
-        print("[DEBUG] Creating G1Rev3bEnvCfg...", flush=True)
-        env_cfg = G1Rev3bEnvCfg()
-        env_cfg.scene.num_envs = args.num_envs
-        env_cfg.sim.device = args.device
-        print("[DEBUG] G1Rev3bEnvCfg Created.", flush=True)
-    except Exception as e:
-        print(f"[ERROR] Logic Error in Config: {e}", flush=True)
-        return
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_envs", type=int, default=4096)
+    parser.add_argument("--headless", action="store_true", default=False)
+    args = parser.parse_args()
 
-    print(f"[INFO] Training Rev3b with {env_cfg.scene.num_envs} environments.")
-    print(f"[INFO] Stiffness: 200.0 (per config)")
-
-    # Create Environment
-    try:
-        print("[DEBUG] Creating ManagerBasedRLEnv...", flush=True)
-        env = ManagerBasedRLEnv(cfg=env_cfg)
-        print("[DEBUG] ManagerBasedRLEnv Created.", flush=True)
-    except Exception as e:
-         print(f"[ERROR] Failed to create ManagerBasedRLEnv: {e}", flush=True)
-         import traceback
-         traceback.print_exc()
-         return
+    # 1. Create Environment
+    env_cfg = G1Rev3bEnvCfg() # CHANGED
+    env_cfg.scene.num_envs = args.num_envs # Ensure argparse is respected
     
-    # Wrap for RSL-RL
-    print("[DEBUG] Wrapping Environment...", flush=True)
-    vec_env = RslRlVecEnvWrapper(env)
-    print("[DEBUG] Environment Wrapped.", flush=True)
+    env = ManagerBasedRLEnv(cfg=env_cfg)
     
-    # Configure RSL-RL (PPO + PER)
-    # Adding Normalization!
-    ppo_config = {
+    # WRAP ENV FOR RSL-RL
+    env = RslRlVecEnvWrapper(env)
+    
+    print("[DEBUG] Environment created and wrapped.", flush=True)
+    
+    # 2. Config for PPO/PER
+    
+    # Create Log Dir (REV3b - 3000 EPOCHS)
+    log_dir = os.path.join(script_dir, "logs_rev3b") # CHANGED
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+        
+    # Reset Environment to ensure observations are valid
+    print("[DEBUG] Resetting environment...", flush=True)
+    env.reset()
+    print("[DEBUG] Environment reset done.", flush=True)
+    
+    # Flattened Config for OnPolicyRunner
+    train_cfg = {
         "seed": 42,
-        "device": env_cfg.sim.device,
+        "obs_groups": {"actor": ["policy"], "critic": ["policy"]},
         "num_steps_per_env": 24,
-        "max_iterations": 3000, # 3000 Iterations (~72M steps)
-        "save_interval": 100,   # Save often
-        "experiment_name": "g1_climb_rev3b",
+        "max_iterations": 3000, # CHANGED: 3000 Epochs
+        "save_interval": 100,   # CHANGED: Save every 100
+        "experiment_name": "g1_climb_rev3b", # CHANGED
         "run_name": "run_001",
-        "obs_groups": {
-            "actor": ["policy"], 
-            "critic": ["policy"]
-        },
+        "resume": False, 
+        "load_run": -1,
+        "checkpoint": -1,
         "algorithm": {
-            "class_name": "PPO",
             "value_loss_coef": 1.0,
             "use_clipped_value_loss": True,
             "clip_param": 0.2,
             "entropy_coef": 0.01,
             "num_learning_epochs": 5,
             "num_mini_batches": 4, 
-            "learning_rate": 1.0e-3, # Faster learning start
+            "learning_rate": 1.0e-3, # Faster LR for Rev3b
             "schedule": "adaptive",
             "gamma": 0.99,
             "lam": 0.95,
@@ -159,45 +146,37 @@ def main():
             "max_grad_norm": 1.0,
         },
         "policy": {
-            "class_name": "ActorCritic",
-            "init_noise_std": 1.0,
-            "actor_hidden_dims": [256, 128, 64], # Slightly deeper
-            "critic_hidden_dims": [256, 128, 64],
-            "activation": "elu",
-            # CRITICAL: ENABLE NORMALIZATION
-            "actor_obs_normalization": True,
-            "critic_obs_normalization": True,
-        }
+             "class_name": "ActorCritic", 
+             "init_noise_std": 1.0,
+             "noise_std_type": "log",
+             "actor_hidden_dims": [256, 128, 64], # Deeper net
+             "critic_hidden_dims": [256, 128, 64],
+             "activation": "elu",
+             # CRITICAL: ENABLE NORMALIZATION (User Requirement)
+             "actor_obs_normalization": True,
+             "critic_obs_normalization": True,
+        },
     }
-
-    # Log Directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    log_dir = os.path.join(script_dir, "logs_rev3b")
-    if not os.path.exists(log_dir):
-        print(f"[INFO] Creating log directory: {log_dir}")
-        os.makedirs(log_dir, exist_ok=True)
     
-    # Reset Environment (REQUIRED for Init)
-    print("[DEBUG] Resetting Environment...", flush=True)
-    vec_env.reset()
-    print("[DEBUG] Environment Reset.", flush=True)
-
-    # Create Runner
-    print(f"[INFO] Logging to: {log_dir}")
+    print("[DEBUG] Creating Runner...", flush=True)
     try:
-        runner = PrioritizedRunner(vec_env, ppo_config, log_dir=log_dir, device=env_cfg.sim.device)
-        print("[DEBUG] Runner Created.", flush=True)
+        runner = PrioritizedRunner(
+            env=env,
+            train_cfg=train_cfg,
+            log_dir=log_dir,
+            device="cuda:0"
+        )
     except Exception as e:
-        print(f"[ERROR] Failed to create Runner: {e}", flush=True)
+        print(f"[ERROR] Runner creation failed: {e}", flush=True)
         import traceback
         traceback.print_exc()
         return
 
-    # Start Training
-    runner.learn(num_learning_iterations=ppo_config["max_iterations"], init_at_random_ep_len=True)
+    print("[DEBUG] Runner created. Starting Learning...", flush=True)
     
-    # Close
-    env.close()
+    runner.learn(num_learning_iterations=train_cfg["max_iterations"], init_at_random_ep_len=True)
+    print("[DEBUG] Learning finished.", flush=True)
+    
     simulation_app.close()
 
 if __name__ == "__main__":

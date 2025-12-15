@@ -20,4 +20,4 @@ Write-Host "--------------------------------------------------"
 Write-Host "Launching G1 TRAINING REV3b (3000 Epochs)"
 Write-Host "--------------------------------------------------"
 
-python C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\train_rev3b.py --num_envs 64 --headless > train_log_64.txt 2>&1
+python C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\train_rev3b.py --num_envs 4096 --headless > train_log_rev3b.txt 2>&1
