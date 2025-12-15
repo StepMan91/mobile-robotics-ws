@@ -38,24 +38,96 @@ simulation_app = SimulationApp({"headless": args.headless})
 # 3. Imports after App Launch
 from isaaclab.envs import ManagerBasedRLEnv
 from g1_locomotion.g1_rev3b_env_cfg import G1Rev3bEnvCfg # NEW CONFIG
-from isaaclab_tasks.utils.wrappers.rsl_rl import RslRlVecEnvWrapper 
+# from isaaclab_tasks.utils.wrappers.rsl_rl import RslRlVecEnvWrapper # FAILED
 from rsl_rl.runners import OnPolicyRunner
 from per_components import PrioritizedRunner # Using PER
+from tensordict import TensorDict
+
+# Wrapper (Reused from play_rl_per_999.py / train_rl_climb.py)
+class RslRlVecEnvWrapper:
+    """Wrapper to make IsaacLab Gym Env compatible with RSL-RL."""
+    def __init__(self, env):
+        self.env = env
+        self.cfg = env.unwrapped.cfg # Expose config for Logger
+        self.num_envs = env.unwrapped.num_envs
+        # Check action/obs spaces
+        if hasattr(self.env.unwrapped, "num_actions"):
+            self.num_actions = self.env.unwrapped.num_actions
+        else:
+            self.num_actions = self.env.unwrapped.action_space.shape[1]
+            
+        if hasattr(self.env.unwrapped, "num_observations"):
+            self.num_obs = self.env.unwrapped.num_observations
+        else:
+            self.num_obs = self.env.unwrapped.observation_space['policy'].shape[1]
+            
+        self.num_privileged_obs = None 
+        self.device = env.unwrapped.device
+        
+    def _sanitize(self, tensor, name="Observation"):
+        if torch.isnan(tensor).any() or torch.isinf(tensor).any():
+            return torch.nan_to_num(tensor, nan=0.0, posinf=0.0, neginf=0.0)
+        return tensor
+
+    def step(self, actions):
+        # Sanitize actions before sending to env
+        actions = self._sanitize(actions, "Actions")
+        
+        obs_dict, rew, terminated, truncated, extras = self.env.step(actions)
+        dones = terminated | truncated
+        # Returns: obs, privileged_obs, rewards, dones, infos
+        policy_obs = obs_dict["policy"]
+        
+        # Sanitize outputs
+        policy_obs = self._sanitize(policy_obs, "PolicyObs")
+        rew = self._sanitize(rew, "Rewards")
+        
+        return TensorDict({"policy": policy_obs}, batch_size=[self.num_envs]), rew, dones, extras
+
+    def get_observations(self):
+        # Recompute observations
+        obs = self.env.unwrapped.observation_manager.compute()["policy"]
+        return TensorDict({"policy": self._sanitize(obs, "GetObs")}, batch_size=[self.num_envs])
+        
+    def reset(self):
+        obs_dict, _ = self.env.reset()
+        obs = obs_dict["policy"]
+        return TensorDict({"policy": self._sanitize(obs, "ResetObs")}, batch_size=[self.num_envs]), None
+
+    def __getattr__(self, name):
+        return getattr(self.env.unwrapped, name)
 
 def main():
+    print("[DEBUG] ENTERING MAIN", flush=True)
     # Configure Environment
-    env_cfg = G1Rev3bEnvCfg()
-    env_cfg.scene.num_envs = args.num_envs
-    env_cfg.sim.device = args.device
+    try:
+        print("[DEBUG] Creating G1Rev3bEnvCfg...", flush=True)
+        env_cfg = G1Rev3bEnvCfg()
+        env_cfg.scene.num_envs = args.num_envs
+        env_cfg.sim.device = args.device
+        print("[DEBUG] G1Rev3bEnvCfg Created.", flush=True)
+    except Exception as e:
+        print(f"[ERROR] Logic Error in Config: {e}", flush=True)
+        return
 
     print(f"[INFO] Training Rev3b with {env_cfg.scene.num_envs} environments.")
     print(f"[INFO] Stiffness: 200.0 (per config)")
 
     # Create Environment
-    env = ManagerBasedRLEnv(cfg=env_cfg)
+    try:
+        print("[DEBUG] Creating ManagerBasedRLEnv...", flush=True)
+        env = ManagerBasedRLEnv(cfg=env_cfg)
+        print("[DEBUG] ManagerBasedRLEnv Created.", flush=True)
+    except Exception as e:
+         print(f"[ERROR] Failed to create ManagerBasedRLEnv: {e}", flush=True)
+         import traceback
+         traceback.print_exc()
+         return
     
     # Wrap for RSL-RL
+    print("[DEBUG] Wrapping Environment...", flush=True)
     vec_env = RslRlVecEnvWrapper(env)
+    print("[DEBUG] Environment Wrapped.", flush=True)
     
     # Configure RSL-RL (PPO + PER)
     # Adding Normalization!
