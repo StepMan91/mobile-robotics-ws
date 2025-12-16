@@ -15,9 +15,9 @@ $ENV:EXP_PATH = "$ISAAC_SIM_PATH\apps\isaacsim.exp.base.kit"
 # 5. Add our source directory AND Isaac Lab to PYTHONPATH
 $ENV:PYTHONPATH = "C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\source;C:\Users\basti\source\repos\IsaacLab\source;C:\Users\basti\source\repos\IsaacLab\source\extensions;C:\Users\basti\miniconda3\envs\isaaclab\Lib\site-packages;$ENV:PYTHONPATH"
 
-# 6. Run Training
+# 6. Run List Joints
 Write-Host "--------------------------------------------------"
-Write-Host "Launching G1 TRAINING REV4 (Robust Climber - 5000 Epochs)"
+Write-Host "Listing Joints..."
 Write-Host "--------------------------------------------------"
 
-python -u C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\train_rev4.py --num_envs 4096 --headless 2>&1 | Tee-Object -FilePath train_log_rev4_v10.txt
+python C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\list_joints_rev4.py --headless > joints.txt 2>&1

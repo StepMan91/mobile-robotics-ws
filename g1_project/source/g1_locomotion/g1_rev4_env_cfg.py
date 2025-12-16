@@ -34,16 +34,30 @@ def hand_rail_distance(env, asset_cfg: SceneEntityCfg, rail_start: tuple, rail_e
     return torch.exp(-distance * 3.0) 
 
 def look_at_stairs(env, asset_cfg: SceneEntityCfg):
-    """Reward head pitch DOWN (looking at feet/stairs)."""
-    # Head joint is usually pitch or sensor link orientation
-    # We use root orientation + head joint or sensor orientation
-    # Simplified: Reward projecting gravity in Sensor Frame X (Forward)
-    # Better: Reward Head Pitch Joint position to be around 0.5 rad (looking down)
+    """Reward for tilting torso forward/down to 'look' at stairs."""
+    # Get quaternion of the torso
+    body_quat = env.scene["robot"].data.body_quat_w[:, asset_cfg.body_ids[0]]
     
-    # Using Head Pitch Joint directly
-    joint_pos = env.scene["robot"].data.joint_pos[:, asset_cfg.body_ids[0]]
-    target_pitch = 0.5 # Radians down
-    error = torch.abs(joint_pos - target_pitch)
+    # We want local X-axis (Forward) to point slightly DOWN in world frame.
+    # Transform local X-axis (1,0,0) by body quaternion
+    # Standard quaternion rotation: q * v * q_inv
+    # Simplified math for rotating vector [1, 0, 0] by quat [w, x, y, z]:
+    # x_w = 1 - 2y^2 - 2z^2
+    # y_w = 2xy + 2wz
+    # z_w = 2xz - 2wy
+    
+    w = body_quat[:, 0]
+    x = body_quat[:, 1]
+    y = body_quat[:, 2]
+    z = body_quat[:, 3]
+    
+    # We care about Z component of the forward vector (z_w)
+    # If z_w < 0, it points DOWN. If z_w > 0, it points UP.
+    vec_forward_z = 2 * (x * z - w * y)
+    
+    # Reward for negative Z (looking down). 
+    # Target: -0.2 (approx 10-15 degrees down)
+    error = torch.abs(vec_forward_z - (-0.3)) 
     return torch.exp(-error * 5.0)
 
 def climb_progress_reward(env, command_name: str):
@@ -116,11 +130,11 @@ class RewardsCfg:
         }
     )
     
-    # Look At Stairs (User Request)
+    # Look At Stairs (Modified for valid body)
     look_at_stairs = RewTerm(
         func=look_at_stairs,
         weight=2.0,
-        params={"asset_cfg": SceneEntityCfg("robot", body_names="head_pitch_link")}
+        params={"asset_cfg": SceneEntityCfg("robot", body_names="torso_link")}
     )
     
     # -- Regularization --
@@ -144,7 +158,6 @@ class CommandsCfg:
             lin_vel_x=(0.4, 0.8), # Conservative forward speed
             lin_vel_y=(-0.0, 0.0),
             ang_vel_z=(-0.1, 0.1),
-            heading=(-0.05, 0.05)
         ),
     )
 
@@ -251,7 +264,7 @@ class G1Rev4EnvCfg(ManagerBasedRLEnvCfg):
                     friction=0.05,   # Non-zero friction
                 ),
                 "upper_body": ImplicitActuatorCfg(
-                    joint_names_expr=[".*_waist_.*", ".*_shoulder_.*", ".*_elbow_.*", ".*_wrist_.*"],
+                    joint_names_expr=["waist_.*", ".*_shoulder_.*", ".*_elbow_.*", ".*_wrist_.*"],
                     stiffness=60.0,  # Slightly stiffer upper body
                     damping=5.0,
                     friction=0.05,

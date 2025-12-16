@@ -33,6 +33,8 @@ from isaaclab.envs import ManagerBasedRLEnv
 from g1_locomotion.g1_rev4_env_cfg import G1Rev4EnvCfg # REV4 CONFIG
 from rsl_rl.runners import OnPolicyRunner # STANDARD PPO (No PER)
 
+from tensordict import TensorDict
+
 # Wrapper (Inline)
 class RslRlVecEnvWrapper:
     def __init__(self, env):
@@ -49,20 +51,25 @@ class RslRlVecEnvWrapper:
         self.num_privileged_obs = None 
         self.device = env.unwrapped.device
         
+    def _to_tensordict(self, obs_dict):
+        # Wrap dict in TensorDict for rsl_rl compatibility
+        return TensorDict(obs_dict, batch_size=self.num_envs, device=self.device)
+
     def step(self, actions):
         obs_dict, rew, terminated, truncated, extras = self.env.step(actions)
         dones = terminated | truncated
-        policy_obs = obs_dict["policy"]
-        return policy_obs, policy_obs, rew, dones, extras
+        # Return TensorDict, rewards, dones, extras (4 values for rsl_rl 2.0)
+        return self._to_tensordict(obs_dict), rew, dones, extras
 
     def get_observations(self):
-        policy_obs = self.env.unwrapped.observation_manager.compute()["policy"]
-        return policy_obs, policy_obs
+        # Return TensorDict (contains "policy")
+        obs_dict = self.env.unwrapped.observation_manager.compute()
+        return self._to_tensordict(obs_dict)
         
     def reset(self):
         obs_dict, _ = self.env.reset()
-        policy_obs = obs_dict["policy"]
-        return policy_obs, policy_obs
+        # Return TensorDict, extras
+        return self._to_tensordict(obs_dict), {"info": {}}
 
 def main():
     parser = argparse.ArgumentParser()
@@ -95,6 +102,7 @@ def main():
         "save_interval": 100,
         "empirical_normalization": False,
         "policy": {
+            "class_name": "ActorCritic",
             "init_noise_std": 1.0,
             "actor_hidden_dims": [128, 64, 32], # Smaller, faster net for Rev4
             "critic_hidden_dims": [128, 64, 32],
@@ -115,6 +123,7 @@ def main():
             "desired_kl": 0.01,
             "max_grad_norm": 1.0,
         },
+        "obs_groups": {"policy": ["policy"]}, # Explicit key mapping for rsl_rl 2.0
     }
 
     # Reset before runner
