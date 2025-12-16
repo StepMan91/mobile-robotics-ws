@@ -10,6 +10,7 @@ import numpy as np
 import math
 from omni.isaac.core import World
 from omni.isaac.core.objects import VisualCuboid, VisualCylinder
+from pxr import UsdPhysics
 
 # Defaults
 STEP_HEIGHT = 0.15
@@ -29,16 +30,20 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
         z_offset = i * step_height + (step_height / 2.0)
         
         pos = base_pos + np.array([x_offset, 0, z_offset])
+        prim_path = f"/World/Stairs/Step_{i}"
         
         world.scene.add(
             VisualCuboid(
-                prim_path=f"/World/Stairs/Step_{i}",
+                prim_path=prim_path,
                 name=f"step_{i}",
                 position=pos,
                 scale=np.array([step_depth, width, step_height]),
                 color=np.array([0.3, 0.3, 0.35]) 
             )
         )
+        # Apply Collision
+        prim = omni.usd.get_context().get_stage().GetPrimAtPath(prim_path)
+        UsdPhysics.CollisionAPI.Apply(prim)
         
     # --- CATWALK ---
     catwalk_depth = 2.0
@@ -48,15 +53,19 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
         (num_steps - 1) * step_height + (step_height / 2.0)
     ])
     
+    catwalk_path = "/World/Stairs/Catwalk"
     world.scene.add(
         VisualCuboid(
-            prim_path="/World/Stairs/Catwalk",
+            prim_path=catwalk_path,
             name="catwalk",
             position=catwalk_pos,
             scale=np.array([catwalk_depth, width, step_height]),
             color=np.array([0.25, 0.25, 0.3])
         )
     )
+    # Apply Collision
+    prim = omni.usd.get_context().get_stage().GetPrimAtPath(catwalk_path)
+    UsdPhysics.CollisionAPI.Apply(prim)
 
     # --- HANDRAILS ---
     # Create Posts and Rails
@@ -92,16 +101,20 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
         rad = math.radians(pitch_deg)
         orient = np.array([math.cos(rad/2), 0, math.sin(rad/2), 0])
         
+        rail_path = f"/World/Stairs/Rail_Diag_{idx}"
         world.scene.add(
             VisualCylinder(
-                prim_path=f"/World/Stairs/Rail_Diag_{idx}",
+                prim_path=rail_path,
                 name=f"rail_diag_{idx}",
                 position=rail_pos,
-                scale=np.array([rail_radius, rail_radius, diag_len + 0.5]), # Extend a bit
+                scale=np.array([rail_radius, rail_radius, diag_len + 0.5]), 
                 color=np.array([0.8, 0.8, 0.2]), # Yellow/Safety
                 orientation=orient 
             )
         )
+        # Apply Collision to Rail
+        prim = omni.usd.get_context().get_stage().GetPrimAtPath(rail_path)
+        UsdPhysics.CollisionAPI.Apply(prim)
         
         # 2. Vertical Posts (Start, Middle, End)
         post_indices = [0, num_steps // 2, num_steps - 1]
@@ -110,16 +123,20 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
              pz = p_idx * step_height + step_height # On Step Surface
              
              post_pos = base_pos + np.array([px, y_off, pz + rail_height/2.0])
+             post_path = f"/World/Stairs/Post_{idx}_{p_idx}"
              
              world.scene.add(
                 VisualCylinder(
-                    prim_path=f"/World/Stairs/Post_{idx}_{p_idx}",
+                    prim_path=post_path,
                     name=f"post_{idx}_{p_idx}",
                     position=post_pos,
                     scale=np.array([post_radius, post_radius, rail_height]),
                     color=np.array([0.2, 0.2, 0.2])
                 )
              )
+             # Apply Collision to Post
+             prim = omni.usd.get_context().get_stage().GetPrimAtPath(post_path)
+             UsdPhysics.CollisionAPI.Apply(prim)
 
 def create_scene():
     world = World()
