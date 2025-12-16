@@ -163,5 +163,20 @@ def main():
             
     simulation_app.close()
 
+import traceback
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print("\n" + "="*60)
+        print("FATAL CRASH IN PLAY SCRIPT")
+        print("="*60)
+        traceback.print_exc()
+        print("="*60 + "\n")
+        # Save to file just in case
+        with open("last_crash.txt", "w") as f:
+            f.write(traceback.format_exc())
+    finally:
+        # Prevent immediate window close if possible (though Kit might force it)
+        input("Press Enter to Exit...")

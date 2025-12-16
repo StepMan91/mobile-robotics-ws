@@ -1,7 +1,7 @@
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
-from isaaclab.terrains import TerrainImporterCfg, TerrainGeneratorCfg
+from isaaclab.terrains import TerrainImporterCfg, TerrainGeneratorCfg, MeshPlaneTerrainCfg
 from isaaclab.utils import configclass
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.managers import EventTermCfg as EventTerm
@@ -281,20 +281,31 @@ class G1Rev4EnvCfg(ManagerBasedRLEnvCfg):
                 border_width=5.0,
                 num_rows=1,
                 num_cols=1,
-                sub_terrains={"flat": mdp.MeshPlaneTerrainCfg(flat_patch=True)}
+                sub_terrains={"flat": MeshPlaneTerrainCfg()}
             ),
             debug_vis=False,
         )
         
         # 2. Test Environment (Cubes/Stairs) loaded as STATIC ASSET
         # This bypasses TerrainImporter logic and loads raw USD as RigidObject.
+        # 2. Stairs Environment (Loaded as STATIC ASSET to preserve physics)
         self.scene.environment = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/Environment",
             spawn=sim_utils.UsdFileCfg(
-                usd_path="c:/Users/basti/source/repos/mobile-robotics-ws/g1_project/assets/test_env.usd",
+                usd_path="c:/Users/basti/source/repos/mobile-robotics-ws/g1_project/assets/stairs_env.usd",
                 scale=(1.0, 1.0, 1.0),
             ),
             init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
+        )
+
+        # 3. Explicit Light Source (Fallback for visibility)
+        self.scene.sky_light = AssetBaseCfg(
+            prim_path="/World/skyLight",
+            spawn=sim_utils.DomeLightCfg(intensity=1000.0, color=(1.0, 1.0, 1.0)),
+        )
+        self.scene.light = AssetBaseCfg(
+            prim_path="/World/light",
+            spawn=sim_utils.DistantLightCfg(intensity=2500.0, angle=0.53, color=(1.0, 1.0, 1.0)),
         )
 
         # --- LEGACY SENSOR (Required for Old Policy Playback) ---
@@ -305,7 +316,7 @@ class G1Rev4EnvCfg(ManagerBasedRLEnvCfg):
             ray_alignment="yaw",
             pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
             debug_vis=False, # Hidden
-            mesh_prim_paths=["/World/ClimbEnv"],
+            mesh_prim_paths=["/World"],
         )
         
         # 1. Livox Mid-360 (Approximation: 360 deg lidar)

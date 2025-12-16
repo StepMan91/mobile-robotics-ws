@@ -7,19 +7,26 @@ simulation_app = SimulationApp(CONFIG)
 
 import omni.usd
 import numpy as np
-from pxr import Usd, UsdGeom, UsdPhysics, Gf, Sdf
+from pxr import Usd, UsdGeom, UsdPhysics, Gf, Sdf, UsdLux
 
-def create_primitive(stage, prim_type, path, position, scale=None, radius=None, color=None):
+def create_primitive(stage, prim_type, path, position, scale=None, radius=None, height=None, color=None):
     if prim_type == "Cube":
         prim_geom = UsdGeom.Cube.Define(stage, path)
         if scale:
-             s = Gf.Vec3d(scale[0]/2.0, scale[1]/2.0, scale[2]/2.0)
+             s = Gf.Vec3f(scale[0]/2.0, scale[1]/2.0, scale[2]/2.0)
              UsdGeom.XformCommonAPI(prim_geom).SetScale(s)
              
     elif prim_type == "Sphere":
         prim_geom = UsdGeom.Sphere.Define(stage, path)
         if radius:
              prim_geom.GetRadiusAttr().Set(float(radius))
+             
+    elif prim_type == "Cylinder":
+        prim_geom = UsdGeom.Cylinder.Define(stage, path)
+        if radius:
+             prim_geom.GetRadiusAttr().Set(float(radius))
+        if height:
+             prim_geom.GetHeightAttr().Set(float(height))
              
     # Common Xform
     UsdGeom.XformCommonAPI(prim_geom).SetTranslate(Gf.Vec3d(position[0], position[1], position[2]))
@@ -40,9 +47,6 @@ def create_primitive(stage, prim_type, path, position, scale=None, radius=None, 
     rb_api = UsdPhysics.RigidBodyAPI.Apply(prim)
     rb_api.CreateKinematicEnabledAttr(True)
     
-    # 3. Mass API (Mass = 0 or infinite for static? Kinematic ignores mass, but let's be safe)
-    # Actually, RigidBodyAPI implies it.
-    
     return prim
 
 def create_scene():
@@ -53,39 +57,62 @@ def create_scene():
     scene.CreateGravityDirectionAttr(Gf.Vec3f(0.0, 0.0, -1.0))
     scene.CreateGravityMagnitudeAttr(9.81)
     
-    # Ground Plane
-    plane = UsdGeom.Plane.Define(stage, "/World/GroundPlane")
-    UsdPhysics.CollisionAPI.Apply(plane.GetPrim())
+    # --- LIGHTING (Crucial for Visibility) ---
+    light = UsdLux.DistantLight.Define(stage, "/World/SunLight")
+    light.CreateIntensityAttr(800.0) # Bright
+    light.CreateAngleAttr(0.53) # Sun angle
+    # Rotate light to look down-ish
+    # XformOp not easy on Lux directly without Xform wrapper?
+    # UsdLux inherits from UsdGeomXformable
+    # Rotation -60 deg X, 30 deg Y
+    UsdGeom.XformCommonAPI(light).SetRotate(Gf.Vec3f(-60, 30, 0))
     
-    # --- TEST OBJECTS ---
-    # 1. Cube 1 (Large - The Wall)
-    # Position X=2.0 (In front of robot)
-    create_primitive(stage, "Cube", "/World/Cube_Wall", 
-                     position=[2.0, 0.0, 0.5], # Z=0.5 -> Center at 0.5 (height 1m)
-                     scale=[0.5, 2.0, 1.0], # Thin wall
-                     color=[0.8, 0.2, 0.2]) # Red
+    # --- TEST OBJECTS (Requests: 2 Cubes, 1 Cylinder, 1 Sphere) ---
+    
+    # 1. Cube 1 (Red Wall) - X=2.0
+    create_primitive(stage, "Cube", "/World/Cube_Red", 
+                     position=[2.0, 0.0, 0.5], 
+                     scale=[0.5, 2.0, 1.0], 
+                     color=[0.8, 0.1, 0.1])
                      
-    # 2. Cube 2 (Small - Step)
-    # Position X=1.0 (Closer)
-    create_primitive(stage, "Cube", "/World/Cube_Step", 
-                     position=[1.0, 0.5, 0.25], 
+    # 2. Cube 2 (Green Box) - X=1.0, Y=-1.0
+    create_primitive(stage, "Cube", "/World/Cube_Green", 
+                     position=[1.0, -1.0, 0.25], 
                      scale=[0.5, 0.5, 0.5], 
-                     color=[0.2, 0.8, 0.2]) # Green
+                     color=[0.1, 0.8, 0.1])
 
-    # 3. Sphere (Obstacle)
-    # Position X=3.0
-    create_primitive(stage, "Sphere", "/World/Sphere_Obs",
-                     position=[3.0, -0.5, 0.5],
+    # 3. Sphere (Blue) - X=2.5, Y=1.0
+    create_primitive(stage, "Sphere", "/World/Sphere_Blue",
+                     position=[2.5, 1.0, 0.5],
                      radius=0.5,
-                     color=[0.2, 0.2, 0.8]) # Blue
+                     color=[0.1, 0.1, 0.8])
+                     
+    # 4. Cylinder (Yellow) - X=1.5, Y=0.0
+    create_primitive(stage, "Cylinder", "/World/Cylinder_Yellow",
+                     position=[1.5, 0.0, 0.5],
+                     radius=0.3,
+                     height=1.0,
+                     color=[0.8, 0.8, 0.1])
     
     # Save
     import os
+    import time
     save_path = os.path.abspath(os.path.join(os.getcwd(), "g1_project/assets/test_env.usd"))
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
     print(f"Saving stage to {save_path}...")
-    omni.usd.get_context().save_as_stage(save_path)
+    
+    # Synchronous Export
+    stage.GetRootLayer().Export(save_path)
+    
+    # Wait and Verify
+    time.sleep(1.0)
+    if os.path.exists(save_path):
+        print(f"[SUCCESS] File created at: {save_path}")
+        print(f"Size: {os.path.getsize(save_path)} bytes")
+    else:
+        print(f"[ERROR] File NOT created at: {save_path}")
+        
     print("Done.")
 
 if __name__ == "__main__":
@@ -95,5 +122,7 @@ if __name__ == "__main__":
         print("[INFO] Generation Success.")
     except Exception as e:
         print(f"[FATAL] Generation Failed: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         simulation_app.close()
