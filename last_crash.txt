@@ -1,0 +1,24 @@
+Traceback (most recent call last):
+  File "C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\play_rev4.py", line 170, in <module>
+    main()
+  File "C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\play_rev4.py", line 84, in main
+    env = ManagerBasedRLEnv(cfg=env_cfg)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\basti\source\repos\IsaacLab\source\isaaclab\isaaclab\envs\manager_based_rl_env.py", line 82, in __init__
+    super().__init__(cfg=cfg)
+  File "C:\Users\basti\source\repos\IsaacLab\source\isaaclab\isaaclab\envs\manager_based_env.py", line 171, in __init__
+    self.sim.reset()
+  File "C:\Users\basti\source\repos\IsaacLab\source\isaaclab\isaaclab\sim\simulation_context.py", line 519, in reset
+    self.render()
+  File "C:\Users\basti\source\repos\IsaacLab\source\isaaclab\isaaclab\sim\simulation_context.py", line 582, in render
+    raise exception_to_raise
+  File "C:\Users\basti\source\repos\IsaacLab\source\isaaclab\isaaclab\sensors\sensor_base.py", line 302, in _initialize_callback
+    self._initialize_impl()
+  File "C:\Users\basti\source\repos\IsaacLab\source\isaaclab\isaaclab\sensors\ray_caster\ray_caster.py", line 162, in _initialize_impl
+    self._initialize_warp_meshes()
+  File "C:\Users\basti\source\repos\IsaacLab\source\isaaclab\isaaclab\sensors\ray_caster\ray_caster.py", line 177, in _initialize_warp_meshes
+    mesh_prim = sim_utils.get_first_matching_child_prim(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\basti\source\repos\IsaacLab\source\isaaclab\isaaclab\sim\utils\utils.py", line 712, in get_first_matching_child_prim
+    raise ValueError(f"Prim at path '{prim_path}' is not valid.")
+ValueError: Prim at path '/World/ClimbEnv' is not valid.

@@ -1,0 +1,32 @@
+rosbag2_bagfile_information:
+  version: 5
+  storage_identifier: sqlite3
+  duration:
+    nanoseconds: 14519000000
+  starting_time:
+    nanoseconds_since_epoch: 1765051023693000000
+  message_count: 686
+  topics_with_message_count:
+    - topic_metadata:
+        name: /human_json
+        type: std_msgs/msg/String
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 343
+    - topic_metadata:
+        name: /human_skeleton
+        type: visualization_msgs/msg/MarkerArray
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 343
+  compression_format: ""
+  compression_mode: ""
+  relative_file_paths:
+    - Input_RosBag_3_Fixed_0.db3
+  files:
+    - path: Input_RosBag_3_Fixed_0.db3
+      starting_time:
+        nanoseconds_since_epoch: 1765051023693000000
+      duration:
+        nanoseconds: 14519000000
+      message_count: 686

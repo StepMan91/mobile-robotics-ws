@@ -1,6 +1,7 @@
-rerun-sdk
+rerun-sdk<0.16.0
 torch
 gymnasium
 stable-baselines3
-rclpy
+# rclpy  # Sourced from ROS2 environment
+
 numpy
