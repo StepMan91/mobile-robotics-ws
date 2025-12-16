@@ -278,13 +278,40 @@ class G1Rev4EnvCfg(ManagerBasedRLEnvCfg):
             usd_path="c:/Users/basti/source/repos/mobile-robotics-ws/g1_project/assets/climb_world.usd",
         )
 
+        # --- LEGACY SENSOR (Required for Old Policy Playback) ---
+        # Kept hidden to allow loading v11 policy without crash
         self.scene.height_scanner = RayCasterCfg(
-            prim_path="{ENV_REGEX_NS}/Robot/torso_link",
-            offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.2)),
+            prim_path="{ENV_REGEX_NS}/Robot/torso_link/head_link",
+            offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
             ray_alignment="yaw",
             pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
-            debug_vis=False,
+            debug_vis=False, # Hidden
             mesh_prim_paths=["/World/ClimbEnv"],
+        )
+        
+        # 1. Livox Mid-360 (Approximation: 360 deg lidar)
+        # Mounted on HEAD
+        self.scene.livox_lidar = RayCasterCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/torso_link/head_link",
+            offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.1)),
+            pattern_cfg=patterns.LidarPatternCfg(
+                channels=16, 
+                vertical_fov_range=(-30.0, 30.0), 
+                horizontal_fov_range=(-180.0, 180.0),
+                horizontal_res=2.0 
+            ),
+            debug_vis=True,
+            mesh_prim_paths=["/World"], # Check ALL collisions (Stairs + Ground)
+        )
+
+        # 2. RealSense D435i (Approximation: Forward Grid)
+        # Mounted on Front of HEAD
+        self.scene.realsense_depth = RayCasterCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/torso_link/head_link",
+            offset=RayCasterCfg.OffsetCfg(pos=(0.08, 0.0, 0.0)), # Face
+            pattern_cfg=patterns.GridPatternCfg(resolution=0.05, size=[1.0, 0.6]),
+            debug_vis=True,
+            mesh_prim_paths=["/World"], # Check ALL collisions
         )
         self.scene.contact_forces = ContactSensorCfg(
             prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True,

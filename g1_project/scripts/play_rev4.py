@@ -143,6 +143,18 @@ def main():
     print("[INFO] Starting Play Loop. Press Ctrl+C to stop.")
     
     obs, _ = vec_env.reset()
+
+    # --- SENSOR DEBUG ---
+    print("\n[DEBUG] Sensor Prim Paths Check:")
+    try:
+        scene = env.unwrapped.scene
+        if "livox_lidar" in scene.sensors:
+            print(f" -> Livox Lidar Path: {scene['livox_lidar'].data.prim_path}")
+        if "realsense_depth" in scene.sensors:
+            print(f" -> RealSense Path: {scene['realsense_depth'].data.prim_path}")
+    except Exception as e:
+        print(f"[ERROR] Could not inspect sensors: {e}")
+    print("--------------------------------\n")
     
     while simulation_app.is_running():
         with torch.inference_mode():

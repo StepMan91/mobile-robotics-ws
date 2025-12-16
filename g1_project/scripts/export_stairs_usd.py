@@ -8,9 +8,9 @@ simulation_app = SimulationApp(CONFIG)
 import omni.usd
 import numpy as np
 import math
-from omni.isaac.core import World
-from omni.isaac.core.objects import VisualCuboid, VisualCylinder
-from pxr import UsdPhysics
+from isaacsim.core.api.world import World
+from isaacsim.core.api.objects import VisualCuboid, VisualCylinder
+from pxr import UsdPhysics, Gf
 
 # Defaults
 STEP_HEIGHT = 0.15
@@ -20,9 +20,20 @@ WIDTH = 1.0
 def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEIGHT, step_depth=STEP_DEPTH, width=WIDTH):
     """
     Creates an industrial-style staircase and a catwalk with handrails.
-    Adapted from Pantin/visualize_csv_isaac.py
+    Uses Explicit Physics APIs to guarantee collisions.
     """
     base_pos = np.array(position)
+    stage = omni.usd.get_context().get_stage()
+
+    def apply_physics(prim_path):
+        prim = stage.GetPrimAtPath(prim_path)
+        # 1. Collision API (Basic)
+        UsdPhysics.CollisionAPI.Apply(prim)
+        # 2. Mesh Collision API (Forcing mesh-based check if prim is mesh)
+        # UsdPhysics.MeshCollisionAPI.Apply(prim) # Optional, usually CollisionAPI is enough for Cubes
+        # 3. Rigid Body API (Kinematic - Static but tracked)
+        rb = UsdPhysics.RigidBodyAPI.Apply(prim)
+        rb.CreateKinematicEnabledAttr(True)
     
     # --- STAIRS ---
     for i in range(num_steps):
@@ -41,9 +52,7 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
                 color=np.array([0.3, 0.3, 0.35]) 
             )
         )
-        # Apply Collision
-        prim = omni.usd.get_context().get_stage().GetPrimAtPath(prim_path)
-        UsdPhysics.CollisionAPI.Apply(prim)
+        apply_physics(prim_path)
         
     # --- CATWALK ---
     catwalk_depth = 2.0
@@ -63,9 +72,7 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
             color=np.array([0.25, 0.25, 0.3])
         )
     )
-    # Apply Collision
-    prim = omni.usd.get_context().get_stage().GetPrimAtPath(catwalk_path)
-    UsdPhysics.CollisionAPI.Apply(prim)
+    apply_physics(catwalk_path)
 
     # --- HANDRAILS ---
     # Create Posts and Rails
@@ -91,13 +98,6 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
         
         pitch_deg = 90 - math.degrees(angle_rad) 
         
-        # Orientation: Rotation around Y axis
-        # Quaternion for Y-rotation: [cos(a/2), 0, sin(a/2), 0]
-        # But we need to verify Isaac Core orientation input standard. 
-        # VisualCylinder takes [w, x, y, z] by default in recent versions? Or [x, y, z, w]?
-        # Documentation says [w, x, y, z] usually.
-        # math.cos(rad/2), 0, math.sin(rad/2), 0
-        
         rad = math.radians(pitch_deg)
         orient = np.array([math.cos(rad/2), 0, math.sin(rad/2), 0])
         
@@ -112,9 +112,7 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
                 orientation=orient 
             )
         )
-        # Apply Collision to Rail
-        prim = omni.usd.get_context().get_stage().GetPrimAtPath(rail_path)
-        UsdPhysics.CollisionAPI.Apply(prim)
+        apply_physics(rail_path)
         
         # 2. Vertical Posts (Start, Middle, End)
         post_indices = [0, num_steps // 2, num_steps - 1]
@@ -134,15 +132,20 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
                     color=np.array([0.2, 0.2, 0.2])
                 )
              )
-             # Apply Collision to Post
-             prim = omni.usd.get_context().get_stage().GetPrimAtPath(post_path)
-             UsdPhysics.CollisionAPI.Apply(prim)
+             apply_physics(post_path)
 
 def create_scene():
     world = World()
     
     # Ground Plane
     world.scene.add_default_ground_plane()
+
+    # --- PHYSICS SCENE (Crucial for Collisions) ---
+    stage = omni.usd.get_context().get_stage()
+    scene = UsdPhysics.Scene.Define(stage, "/World/PhysicsScene")
+    scene.CreateGravityDirectionAttr(Gf.Vec3f(0.0, 0.0, -1.0))
+    scene.CreateGravityMagnitudeAttr(9.81)
+    # ----------------------------------------------
     
     # Stairs
     # Use position from Pantin/visualize_csv_isaac.py: [2.0, 2.0, 0.0]
