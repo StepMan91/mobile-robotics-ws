@@ -1,7 +1,7 @@
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
-from isaaclab.terrains import TerrainImporterCfg
+from isaaclab.terrains import TerrainImporterCfg, TerrainGeneratorCfg
 from isaaclab.utils import configclass
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.managers import EventTermCfg as EventTerm
@@ -272,10 +272,29 @@ class G1Rev4EnvCfg(ManagerBasedRLEnvCfg):
             },
         )
 
+        # 1. Standard Ground Mesh (Generated) - Safer than 'plane' which crashed
         self.scene.terrain = TerrainImporterCfg(
-            prim_path="/World/ClimbEnv",
-            terrain_type="usd",
-            usd_path="c:/Users/basti/source/repos/mobile-robotics-ws/g1_project/assets/climb_world.usd",
+            prim_path="/World/ground",
+            terrain_type="generator",
+            terrain_generator=TerrainGeneratorCfg(
+                size=(20.0, 20.0), 
+                border_width=5.0,
+                num_rows=1,
+                num_cols=1,
+                sub_terrains={"flat": mdp.MeshPlaneTerrainCfg(flat_patch=True)}
+            ),
+            debug_vis=False,
+        )
+        
+        # 2. Test Environment (Cubes/Stairs) loaded as STATIC ASSET
+        # This bypasses TerrainImporter logic and loads raw USD as RigidObject.
+        self.scene.environment = AssetBaseCfg(
+            prim_path="{ENV_REGEX_NS}/Environment",
+            spawn=sim_utils.UsdFileCfg(
+                usd_path="c:/Users/basti/source/repos/mobile-robotics-ws/g1_project/assets/test_env.usd",
+                scale=(1.0, 1.0, 1.0),
+            ),
+            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
         )
 
         # --- LEGACY SENSOR (Required for Old Policy Playback) ---
