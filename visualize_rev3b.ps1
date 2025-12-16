@@ -15,9 +15,9 @@ $ENV:EXP_PATH = "$ISAAC_SIM_PATH\apps\isaacsim.exp.base.kit"
 # 5. Add our source directory AND Isaac Lab to PYTHONPATH
 $ENV:PYTHONPATH = "C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\source;C:\Users\basti\source\repos\IsaacLab\source;C:\Users\basti\source\repos\IsaacLab\source\extensions;C:\Users\basti\miniconda3\envs\isaaclab\Lib\site-packages;$ENV:PYTHONPATH"
 
-# 6. Run Training
+# 6. Run Visualization
 Write-Host "--------------------------------------------------"
-Write-Host "Launching G1 TRAINING REV3b (3000 Epochs)"
+Write-Host "Launching G1 VISUALIZATION REV3b (Epoch 300)"
 Write-Host "--------------------------------------------------"
 
-python C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\train_rev3b.py --num_envs 4096 --headless > train_log_rev3c.txt 2>&1
+python C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\play_rev3b.py --num_envs 1 --checkpoint model_300.pt

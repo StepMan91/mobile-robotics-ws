@@ -106,7 +106,7 @@ class RewardsCfg:
     # -- Task --
     hand_rail = RewTerm(
         func=hand_rail_distance,
-        weight=2.0,
+        weight=0.5, # Reduced (Focus on legs first)
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_wrist_roll_link"), 
             "rail_start": (3.0, 0.5, 1.05),
@@ -116,13 +116,13 @@ class RewardsCfg:
     
     climb_progress = RewTerm(
         func=climb_progress_reward,
-        weight=3.0, # BOOSTED FROM 1.5
+        weight=10.0, # AGGRESSIVE BOOST (Make it move!)
         params={"command_name": "base_velocity"}
     )
     
     feet_air_time = RewTerm(
         func=feet_air_time,
-        weight=1.0,
+        weight=2.0, # Increased to encourage stepping
         params={
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names="left_ankle_roll_link|right_ankle_roll_link"),
             "command_name": "base_velocity",
@@ -132,7 +132,7 @@ class RewardsCfg:
     
     feet_slide = RewTerm(
         func=feet_slide,
-        weight=-1.0,
+        weight=-0.5, # Reduce friction penalty to allow initial slip-ups
         params={
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names="left_ankle_roll_link|right_ankle_roll_link"),
             "asset_cfg": SceneEntityCfg("robot", body_names="left_ankle_roll_link|right_ankle_roll_link"),
@@ -147,13 +147,13 @@ class RewardsCfg:
     
     stability = RewTerm(
         func=torso_upright_reward,
-        weight=2.0,
+        weight=1.0, # Reduced (Don't just stand there)
         params={"asset_cfg": SceneEntityCfg("robot")}
     )
     
     # -- Penalties --
-    dof_torques_l2 = RewTerm(func=mdp.rewards.joint_torques_l2, weight=-1.0e-5)
-    action_rate_l2 = RewTerm(func=mdp.rewards.action_rate_l2, weight=-0.05)
+    dof_torques_l2 = RewTerm(func=mdp.rewards.joint_torques_l2, weight=-1.0e-6) # Negligible
+    action_rate_l2 = RewTerm(func=mdp.rewards.action_rate_l2, weight=-0.005) # SLASHED 10x
     dof_pos_limits = RewTerm(func=mdp.rewards.joint_pos_limits, weight=-10.0)
 
 @configclass

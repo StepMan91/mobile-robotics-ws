@@ -109,8 +109,8 @@ def main():
     
     # 2. Config for PPO/PER
     
-    # Create Log Dir (REV3b - 3000 EPOCHS)
-    log_dir = os.path.join(script_dir, "logs_rev3b") # CHANGED
+    # Create Log Dir (REV3c - 3000 EPOCHS - Tuned)
+    log_dir = os.path.join(script_dir, "logs_rev3c") # CHANGED
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
         
@@ -124,9 +124,9 @@ def main():
         "seed": 42,
         "obs_groups": {"actor": ["policy"], "critic": ["policy"]},
         "num_steps_per_env": 24,
-        "max_iterations": 3000, # CHANGED: 3000 Epochs
-        "save_interval": 100,   # CHANGED: Save every 100
-        "experiment_name": "g1_climb_rev3b", # CHANGED
+        "max_iterations": 3000, 
+        "save_interval": 100,  
+        "experiment_name": "g1_climb_rev3c", # CHANGED: Rev3c (Tuned)
         "run_name": "run_001",
         "resume": False, 
         "load_run": -1,
@@ -138,7 +138,7 @@ def main():
             "entropy_coef": 0.01,
             "num_learning_epochs": 5,
             "num_mini_batches": 4, 
-            "learning_rate": 1.0e-3, # Faster LR for Rev3b
+            "learning_rate": 1.0e-3, 
             "schedule": "adaptive",
             "gamma": 0.99,
             "lam": 0.95,
@@ -149,7 +149,7 @@ def main():
              "class_name": "ActorCritic", 
              "init_noise_std": 1.0,
              "noise_std_type": "log",
-             "actor_hidden_dims": [256, 128, 64], # Deeper net
+             "actor_hidden_dims": [256, 128, 64], 
              "critic_hidden_dims": [256, 128, 64],
              "activation": "elu",
              # CRITICAL: ENABLE NORMALIZATION (User Requirement)
@@ -163,7 +163,7 @@ def main():
         runner = PrioritizedRunner(
             env=env,
             train_cfg=train_cfg,
-            log_dir=log_dir,
+            log_dir=os.path.join(script_dir, "logs_rev3c"), # CHANGED
             device="cuda:0"
         )
     except Exception as e:
