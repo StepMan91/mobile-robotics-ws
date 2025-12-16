@@ -8,21 +8,53 @@ simulation_app = SimulationApp(CONFIG)
 import omni.usd
 import numpy as np
 import math
-from isaacsim.core.api.world import World
-from isaacsim.core.api.objects import VisualCuboid, VisualCylinder
-from pxr import UsdPhysics, Gf
+from pxr import Usd, UsdGeom, UsdPhysics, Gf, Sdf
 
 # Defaults
 STEP_HEIGHT = 0.15
 STEP_DEPTH = 0.25
 WIDTH = 1.0
 
+def create_cube(stage, path, position, scale, color):
+    # Define Cube Prim
+    cube = UsdGeom.Cube.Define(stage, path)
+    
+    # Transform (Xform API)
+    UsdGeom.XformCommonAPI(cube).SetTranslate(Gf.Vec3d(float(position[0]), float(position[1]), float(position[2])))
+    # UsdGeom.Cube scale is 2 units by default? No, size is 2. 
+    # Actually, UsdGeom.Cube does not have a 'size' attribute in older versions, 
+    # but typically it's a unit cube. 
+    # Better to use scaling.
+    # Scale: The visual size is 'size' * scale. 
+    # Note: UsdGeom.Cube default size is 2.0.
+    # To get exact dimensions [d_x, d_y, d_z], we need to scale by [d_x/2, d_y/2, d_z/2].
+    
+    # However, simpler to use VisualCuboid logic? No, that failed.
+    # Let's rely on scale.
+    # Target Scale = dimensions / 2.0
+    
+    s = Gf.Vec3f(float(scale[0]/2.0), float(scale[1]/2.0), float(scale[2]/2.0))
+    UsdGeom.XformCommonAPI(cube).SetScale(s)
+    
+    # Color
+    cube.GetDisplayColorAttr().Set([Gf.Vec3f(color[0], color[1], color[2])])
+    
+    # Physics Collision (The Nuclear Option)
+    prim = cube.GetPrim()
+    UsdPhysics.CollisionAPI.Apply(prim)
+    
+    # Optional: Rigid Body (Static)
+    # rb = UsdPhysics.RigidBodyAPI.Apply(prim)
+    # rb.CreateKinematicEnabledAttr(True) 
+    
+    return cube
+
 def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEIGHT, step_depth=STEP_DEPTH, width=WIDTH):
     """
-    Creates an industrial-style staircase and a catwalk with handrails.
-    Reverted to Object API (set_collision_enabled) for reliability.
+    Creates stairs using Raw USD Geometry + Physics Schema.
     """
     base_pos = np.array(position)
+    stage = omni.usd.get_context().get_stage()
     
     # --- STAIRS ---
     for i in range(num_steps):
@@ -32,15 +64,13 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
         pos = base_pos + np.array([x_offset, 0, z_offset])
         prim_path = f"/World/Stairs/Step_{i}"
         
-        step = VisualCuboid(
-            prim_path=prim_path,
-            name=f"step_{i}",
-            position=pos,
-            scale=np.array([step_depth, width, step_height]),
-            color=np.array([0.3, 0.3, 0.35]) 
+        create_cube(
+            stage, 
+            prim_path, 
+            pos, 
+            scale=[step_depth, width, step_height], 
+            color=[0.3, 0.3, 0.35]
         )
-        step.set_collision_enabled(True)
-        world.scene.add(step)
         
     # --- CATWALK ---
     catwalk_depth = 2.0
@@ -50,99 +80,78 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
         (num_steps - 1) * step_height + (step_height / 2.0)
     ])
     
-    catwalk_path = "/World/Stairs/Catwalk"
-    catwalk = VisualCuboid(
-        prim_path=catwalk_path,
-        name="catwalk",
-        position=catwalk_pos,
-        scale=np.array([catwalk_depth, width, step_height]),
-        color=np.array([0.25, 0.25, 0.3])
+    create_cube(
+        stage, 
+        "/World/Stairs/Catwalk", 
+        catwalk_pos, 
+        scale=[catwalk_depth, width, step_height], 
+        color=[0.25, 0.25, 0.3]
     )
-    catwalk.set_collision_enabled(True)
-    world.scene.add(catwalk)
 
-    # --- HANDRAILS ---
+    # --- HANDRAILS (Simplifying to Boxes for now to ensure collision first) ---
     # Create Posts and Rails
-    rail_height = 0.9 # Standard
-    post_radius = 0.02
-    rail_radius = 0.025
+    rail_height = 0.9 
+    post_width = 0.04 # Square posts for guaranteed box collision
+    rail_width = 0.05
     
-    # Calculate Diagonal Length and Angle
+    # Calculate Diagonal
     total_run = (num_steps - 1) * step_depth
     total_rise = (num_steps - 1) * step_height
     diag_len = math.sqrt(total_run**2 + total_rise**2)
     angle_rad = math.atan2(total_rise, total_run)
+    pitch_deg = 90 - math.degrees(angle_rad) # Not needed if we position start/end?
     
-    # Center of diagonal rail
+    # We will skip complex rotation logic for cylinders and use "Approximated" rails
+    # or just posts for collision testing.
+    # Actually, let's just make the posts solid cubes.
+    
     center_x = (total_run / 2.0)
-    center_z = (total_rise / 2.0) + rail_height + step_height # Offset up
+    center_z = (total_rise / 2.0) + rail_height + step_height 
     
     rail_offsets_y = [width/2.0, -width/2.0]
-    
+
     for idx, y_off in enumerate(rail_offsets_y):
-        # 1. Main Diagonal Rail
+        # 1. Main Rail (Rotated Cube)
         rail_pos = base_pos + np.array([center_x, y_off, center_z])
+        # Rotation logic with UsdGeom is XformOp:rotateY
+        # Skipping simplified: Just add POSTS.
         
-        pitch_deg = 90 - math.degrees(angle_rad) 
-        
-        rad = math.radians(pitch_deg)
-        orient = np.array([math.cos(rad/2), 0, math.sin(rad/2), 0])
-        
-        rail_path = f"/World/Stairs/Rail_Diag_{idx}"
-        rail = VisualCylinder(
-            prim_path=rail_path,
-            name=f"rail_diag_{idx}",
-            position=rail_pos,
-            scale=np.array([rail_radius, rail_radius, diag_len + 0.5]), 
-            color=np.array([0.8, 0.8, 0.2]), # Yellow/Safety
-            orientation=orient 
-        )
-        rail.set_collision_enabled(True)
-        world.scene.add(rail)
-        
-        # 2. Vertical Posts (Start, Middle, End)
+        # 2. Vertical Posts
         post_indices = [0, num_steps // 2, num_steps - 1]
         for p_idx in post_indices:
              px = p_idx * step_depth
-             pz = p_idx * step_height + step_height # On Step Surface
+             pz = p_idx * step_height + step_height 
              
              post_pos = base_pos + np.array([px, y_off, pz + rail_height/2.0])
              post_path = f"/World/Stairs/Post_{idx}_{p_idx}"
              
-             post = VisualCylinder(
-                prim_path=post_path,
-                name=f"post_{idx}_{p_idx}",
-                position=post_pos,
-                scale=np.array([post_radius, post_radius, rail_height]),
-                color=np.array([0.2, 0.2, 0.2])
+             create_cube(
+                stage,
+                post_path, 
+                post_pos,
+                scale=[post_width, post_width, rail_height],
+                color=[0.2, 0.2, 0.2]
              )
-             post.set_collision_enabled(True)
-             world.scene.add(post)
 
 def create_scene():
-    world = World()
-    
-    # Ground Plane
-    world.scene.add_default_ground_plane()
-
-    # --- PHYSICS SCENE (Crucial for Collisions) ---
     stage = omni.usd.get_context().get_stage()
+    
+    # Physics Scene
     scene = UsdPhysics.Scene.Define(stage, "/World/PhysicsScene")
     scene.CreateGravityDirectionAttr(Gf.Vec3f(0.0, 0.0, -1.0))
     scene.CreateGravityMagnitudeAttr(9.81)
-    # ----------------------------------------------
+    
+    # Ground Plane
+    UsdPhysics.CollisionAPI.Apply(UsdGeom.Plane.Define(stage, "/World/GroundPlane").GetPrim())
     
     # Stairs
-    # Use position from Pantin/visualize_csv_isaac.py: [2.0, 2.0, 0.0]
-    create_industrial_stairs(world, position=[2.0, 2.0, 0.0])
+    create_industrial_stairs(None, position=[2.0, 2.0, 0.0])
     
     # Save
     import os
     save_path = os.path.abspath(os.path.join(os.getcwd(), "g1_project/assets/stairs_env.usd"))
-    # Ensure dir
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
-    # Export
     print(f"Saving stage to {save_path}...")
     omni.usd.get_context().save_as_stage(save_path)
     print("Done.")
@@ -151,7 +160,7 @@ import traceback
 
 if __name__ == "__main__":
     try:
-        print("[INFO] Starting Export...")
+        print("[INFO] Starting Export (Raw USD Mode)...")
         create_scene()
         print("[INFO] Export Finished Successfully.")
     except Exception:
