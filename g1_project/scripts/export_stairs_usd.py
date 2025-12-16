@@ -20,20 +20,9 @@ WIDTH = 1.0
 def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEIGHT, step_depth=STEP_DEPTH, width=WIDTH):
     """
     Creates an industrial-style staircase and a catwalk with handrails.
-    Uses Explicit Physics APIs to guarantee collisions.
+    Reverted to Object API (set_collision_enabled) for reliability.
     """
     base_pos = np.array(position)
-    stage = omni.usd.get_context().get_stage()
-
-    def apply_physics(prim_path):
-        prim = stage.GetPrimAtPath(prim_path)
-        # 1. Collision API (Basic)
-        UsdPhysics.CollisionAPI.Apply(prim)
-        # 2. Mesh Collision API (Forcing mesh-based check if prim is mesh)
-        # UsdPhysics.MeshCollisionAPI.Apply(prim) # Optional, usually CollisionAPI is enough for Cubes
-        # 3. Rigid Body API (Kinematic - Static but tracked)
-        rb = UsdPhysics.RigidBodyAPI.Apply(prim)
-        rb.CreateKinematicEnabledAttr(True)
     
     # --- STAIRS ---
     for i in range(num_steps):
@@ -43,16 +32,15 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
         pos = base_pos + np.array([x_offset, 0, z_offset])
         prim_path = f"/World/Stairs/Step_{i}"
         
-        world.scene.add(
-            VisualCuboid(
-                prim_path=prim_path,
-                name=f"step_{i}",
-                position=pos,
-                scale=np.array([step_depth, width, step_height]),
-                color=np.array([0.3, 0.3, 0.35]) 
-            )
+        step = VisualCuboid(
+            prim_path=prim_path,
+            name=f"step_{i}",
+            position=pos,
+            scale=np.array([step_depth, width, step_height]),
+            color=np.array([0.3, 0.3, 0.35]) 
         )
-        apply_physics(prim_path)
+        step.set_collision_enabled(True)
+        world.scene.add(step)
         
     # --- CATWALK ---
     catwalk_depth = 2.0
@@ -63,16 +51,15 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
     ])
     
     catwalk_path = "/World/Stairs/Catwalk"
-    world.scene.add(
-        VisualCuboid(
-            prim_path=catwalk_path,
-            name="catwalk",
-            position=catwalk_pos,
-            scale=np.array([catwalk_depth, width, step_height]),
-            color=np.array([0.25, 0.25, 0.3])
-        )
+    catwalk = VisualCuboid(
+        prim_path=catwalk_path,
+        name="catwalk",
+        position=catwalk_pos,
+        scale=np.array([catwalk_depth, width, step_height]),
+        color=np.array([0.25, 0.25, 0.3])
     )
-    apply_physics(catwalk_path)
+    catwalk.set_collision_enabled(True)
+    world.scene.add(catwalk)
 
     # --- HANDRAILS ---
     # Create Posts and Rails
@@ -102,17 +89,16 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
         orient = np.array([math.cos(rad/2), 0, math.sin(rad/2), 0])
         
         rail_path = f"/World/Stairs/Rail_Diag_{idx}"
-        world.scene.add(
-            VisualCylinder(
-                prim_path=rail_path,
-                name=f"rail_diag_{idx}",
-                position=rail_pos,
-                scale=np.array([rail_radius, rail_radius, diag_len + 0.5]), 
-                color=np.array([0.8, 0.8, 0.2]), # Yellow/Safety
-                orientation=orient 
-            )
+        rail = VisualCylinder(
+            prim_path=rail_path,
+            name=f"rail_diag_{idx}",
+            position=rail_pos,
+            scale=np.array([rail_radius, rail_radius, diag_len + 0.5]), 
+            color=np.array([0.8, 0.8, 0.2]), # Yellow/Safety
+            orientation=orient 
         )
-        apply_physics(rail_path)
+        rail.set_collision_enabled(True)
+        world.scene.add(rail)
         
         # 2. Vertical Posts (Start, Middle, End)
         post_indices = [0, num_steps // 2, num_steps - 1]
@@ -123,16 +109,15 @@ def create_industrial_stairs(world, position, num_steps=15, step_height=STEP_HEI
              post_pos = base_pos + np.array([px, y_off, pz + rail_height/2.0])
              post_path = f"/World/Stairs/Post_{idx}_{p_idx}"
              
-             world.scene.add(
-                VisualCylinder(
-                    prim_path=post_path,
-                    name=f"post_{idx}_{p_idx}",
-                    position=post_pos,
-                    scale=np.array([post_radius, post_radius, rail_height]),
-                    color=np.array([0.2, 0.2, 0.2])
-                )
+             post = VisualCylinder(
+                prim_path=post_path,
+                name=f"post_{idx}_{p_idx}",
+                position=post_pos,
+                scale=np.array([post_radius, post_radius, rail_height]),
+                color=np.array([0.2, 0.2, 0.2])
              )
-             apply_physics(post_path)
+             post.set_collision_enabled(True)
+             world.scene.add(post)
 
 def create_scene():
     world = World()
