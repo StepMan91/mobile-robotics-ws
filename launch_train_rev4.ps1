@@ -20,4 +20,4 @@ Write-Host "--------------------------------------------------"
 Write-Host "Launching G1 TRAINING REV4 (Robust Climber - 5000 Epochs)"
 Write-Host "--------------------------------------------------"
 
-python -u C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\train_rev4.py --num_envs 4096 --headless 2>&1 | Tee-Object -FilePath train_log_rev4_v10.txt
+python -u C:\Users\basti\source\repos\mobile-robotics-ws\g1_project\scripts\train_rev4.py --num_envs 4096 --headless 2>&1 | Tee-Object -FilePath train_log_rev4_v11.txt

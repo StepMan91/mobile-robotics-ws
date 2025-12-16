@@ -281,7 +281,7 @@ class G1Rev4EnvCfg(ManagerBasedRLEnvCfg):
         self.scene.height_scanner = RayCasterCfg(
             prim_path="{ENV_REGEX_NS}/Robot/torso_link",
             offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
-            attach_yaw_only=True,
+            ray_alignment="yaw",
             pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
             debug_vis=False,
             mesh_prim_paths=["/World/ClimbEnv"],

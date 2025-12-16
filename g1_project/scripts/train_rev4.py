@@ -71,6 +71,9 @@ class RslRlVecEnvWrapper:
         # Return TensorDict, extras
         return self._to_tensordict(obs_dict), {"info": {}}
 
+    def __getattr__(self, name):
+        return getattr(self.env, name)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_envs", type=int, default=4096)
