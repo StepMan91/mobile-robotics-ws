@@ -6,9 +6,13 @@ from isaaclab.sensors import RayCasterCfg, patterns
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
 
+import isaaclab.terrains as terrain_gen
+from isaaclab.terrains import TerrainGeneratorCfg
+from isaaclab.managers import RewardTermCfg as RewTerm
+from isaaclab.managers import SceneEntityCfg
 # Define the path to the G1 USD file
 # Using absolute path for now to ensure it works
-G1_USD_PATH = r"c:\Users\basti\.gemini\antigravity\playground\cobalt-cosmos\assets\g1_29dof_rev_1_0\g1_29dof_rev_1_0.usd"
+G1_USD_PATH = r"c:\Sources\mobile-robotics-ws\assets\g1_29dof_rev_1_0\g1_29dof_rev_1_0.usd"
 
 @configclass
 class G1StairEnvCfg(LocomotionVelocityRoughEnvCfg):
@@ -64,7 +68,26 @@ class G1StairEnvCfg(LocomotionVelocityRoughEnvCfg):
         
         # 2. Terrain Configuration (Stairs)
         # We override the terrain generator to focus on stairs
-        # For now, keep rough terrain but we can tune it later
+        self.scene.terrain.terrain_generator = TerrainGeneratorCfg(
+             size=(8.0, 8.0),
+             border_width=20.0,
+             num_rows=10,
+             num_cols=20,
+             horizontal_scale=0.1,
+             vertical_scale=0.005,
+             slope_threshold=0.75,
+             use_cache=False,
+             sub_terrains={
+                 "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
+                     proportion=1.0,
+                     step_height_range=(0.05, 0.20),
+                     step_width=0.3,
+                     platform_width=3.0,
+                     border_width=1.0,
+                     holes=False,
+                 ),
+             }
+        )
         
         # 3. Events
         # Adjust push interval etc.
@@ -72,3 +95,21 @@ class G1StairEnvCfg(LocomotionVelocityRoughEnvCfg):
         
         # 4. Rewards
         # Use default rewards for now
+        # Add stair climbing specific rewards
+        self.rewards.flat_orientation_l2 = RewTerm(
+            func="isaaclab.envs.rewards.flat_orientation_l2",
+            weight=-2.5,
+        )
+        self.rewards.dof_torques_l2 = RewTerm(
+            func="isaaclab.envs.rewards.dof_torques_l2",
+            weight=-1.0e-5,
+        )
+        self.rewards.feet_air_time = RewTerm(
+            func="isaaclab.envs.rewards.feet_air_time",
+            weight=0.5,
+            params={
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_roll"),
+                "command_name": "base_velocity",
+                "threshold": 0.5,
+            },
+        )
